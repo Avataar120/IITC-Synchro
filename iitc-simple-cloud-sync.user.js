@@ -2,9 +2,9 @@
 // @id             iitc-plugin-simple-cloud-sync
 // @name           IITC plugin: Simple Cloud Sync (perso)
 // @category       Misc
-// @version        0.4.0
+// @version        1.0.0
 // @namespace      https://github.com/iitc-project/ingress-intel-total-conversion
-// @description    Synchronise les données localStorage des plugins IITC entre vos appareils via JSONBin.io. Statut affiché directement sur la carte.
+// @description    Synchronise les données localStorage des plugins IITC entre vos appareils via JSONBin.io.
 // @include        https://intel.ingress.com/*
 // @match          https://intel.ingress.com/*
 // @grant          none
@@ -22,10 +22,13 @@ function wrapper(plugin_info) {
   self.ENDPOINT = 'https://api.jsonbin.io/v3/b/' + self.BIN_ID;
   self.SYNC_INTERVAL_MS = 5 * 60 * 1000;
   self.KEY_PREFIX = 'plugin-';
+  // Passez à true pour réafficher l'encart de statut sur la carte (diagnostic mobile)
+  self.DEBUG = false;
   // =======================================================================
 
   self.showStatus = function (msg) {
     console.log('[SimpleCloudSync] ' + msg);
+    if (!self.DEBUG) return;
     try {
       let el = document.getElementById('simpleCloudSyncStatus');
       if (!el) {
@@ -147,7 +150,7 @@ function wrapper(plugin_info) {
         '<a onclick="window.plugin.simpleCloudSync.syncNow(); return false;" title="Forcer la synchronisation cloud">Sync cloud</a>'
       );
     } catch (e) {
-      self.showStatus('Impossible d\'ajouter le bouton toolbox (pas grave, le sync auto fonctionne quand même).');
+      self.showStatus('Impossible d\'ajouter le bouton toolbox.');
     }
   };
 
@@ -157,7 +160,7 @@ function wrapper(plugin_info) {
   if (window.iitcLoaded && typeof setup === 'function') setup();
 }
 
-// Exécution directe, SANS passer par l'injection <script> (bloquée par la CSP sur certains WebView/mobile)
+// Exécution directe (sans injection <script>, non-nécessaire et parfois bloquée sur mobile)
 var plugin_info = {};
 if (typeof GM_info !== 'undefined' && GM_info && GM_info.script) {
   plugin_info.script = {
