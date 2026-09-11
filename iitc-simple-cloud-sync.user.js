@@ -2,9 +2,9 @@
 // @id             iitc-plugin-simple-cloud-sync
 // @name           IITC plugin: Simple Cloud Sync (perso)
 // @category       Misc
-// @version        2.0.0
+// @version        3.0.0
 // @namespace      https://github.com/iitc-project/ingress-intel-total-conversion
-// @description    Synchronise les données localStorage des plugins IITC entre vos appareils via JSONBin.io, avec fusion par clé (pas de remplacement en bloc).
+// @description    Synchronise les données localStorage des plugins IITC entre vos appareils via JSONBin.io, avec fusion par clé basée sur la détection de changement de contenu.
 // @include        https://intel.ingress.com/*
 // @match          https://intel.ingress.com/*
 // @grant          none
@@ -23,11 +23,13 @@ function wrapper(plugin_info) {
   self.SYNC_INTERVAL_MS = 5 * 60 * 1000;
   self.KEY_PREFIX = 'plugin-';
   // Passez à true pour réafficher l'encart de statut sur la carte (diagnostic mobile)
-  self.DEBUG = true;
+  self.DEBUG = false;
   // =======================================================================
 
-  self.TS_MAP_KEY = 'plugin-simpleCloudSync-tsmap';
-  self.origSetItem = localStorage.setItem.bind(localStorage);
+  // Métadonnées : pour chaque clé, la dernière valeur connue-synchronisée + son timestamp.
+  // Sert à détecter si une clé a changé localement depuis la dernière synchro,
+  // sans dépendre d'un patch de localStorage.setItem (peu fiable selon l'environnement).
+  self.META_KEY = 'plugin-simpleCloudSync-meta';
 
   self.showStatus = function (msg) {
     console.log('[SimpleCloudSync] ' + msg);
@@ -50,57 +52,30 @@ function wrapper(plugin_info) {
     } catch (e) { /* ignore */ }
   };
 
-  // ---- Suivi des modifications par clé (timestamp individuel par clé) ----
-
-  self.getTsMap = function () {
-    try { return JSON.parse(localStorage.getItem(self.TS_MAP_KEY) || '{}'); } catch (e) { return {}; }
+  self.getMeta = function () {
+    try { return JSON.parse(localStorage.getItem(self.META_KEY) || '{}'); } catch (e) { return {}; }
   };
 
-  self.setTsMap = function (map) {
-    self.origSetItem(self.TS_MAP_KEY, JSON.stringify(map));
+  self.setMeta = function (meta) {
+    localStorage.setItem(self.META_KEY, JSON.stringify(meta));
   };
 
-  self.touchKey = function (key, ts) {
-    const map = self.getTsMap();
-    map[key] = ts || Date.now();
-    self.setTsMap(map);
-  };
-
-  // Intercepte les écritures localStorage des autres plugins (Keys, Uniques, DrawTools...)
-  // pour horodater chaque clé individuellement dès qu'elle change.
-  self.patchLocalStorage = function () {
-    if (self._patched) return;
-    self._patched = true;
-    localStorage.setItem = function (key, value) {
-      self.origSetItem(key, value);
-      if (typeof key === 'string' && key.indexOf(self.KEY_PREFIX) === 0 && key !== self.TS_MAP_KEY) {
-        self.touchKey(key);
-      }
-    };
-  };
-
-  // Au premier lancement, les clés déjà présentes n'ont pas d'horodatage connu :
-  // on les marque comme "inconnu" (0) pour laisser la priorité à une version distante réelle.
-  self.initTsMapForExistingKeys = function () {
-    const map = self.getTsMap();
-    let changed = false;
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k && k.indexOf(self.KEY_PREFIX) === 0 && k !== self.TS_MAP_KEY && !(k in map)) {
-        map[k] = 0;
-        changed = true;
-      }
-    }
-    if (changed) self.setTsMap(map);
-  };
-
+  // Construit l'état local actuel, avec un ts "frais" (Date.now()) pour toute clé
+  // dont la valeur a changé depuis la dernière synchro connue (meta), et conserve
+  // le ts précédent pour les clés inchangées.
   self.buildLocalEntries = function () {
-    const tsMap = self.getTsMap();
+    const meta = self.getMeta();
     const entries = {};
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
-      if (k && k.indexOf(self.KEY_PREFIX) === 0 && k !== self.TS_MAP_KEY) {
-        entries[k] = { value: localStorage.getItem(k), ts: tsMap[k] || 0 };
+      if (!k || k.indexOf(self.KEY_PREFIX) !== 0 || k === self.META_KEY) continue;
+      const value = localStorage.getItem(k);
+      const prev = meta[k];
+      if (prev && prev.value === value) {
+        entries[k] = { value: value, ts: prev.ts || 0 };
+      } else {
+        // valeur absente des meta, ou différente : changement détecté
+        entries[k] = { value: value, ts: Date.now() };
       }
     }
     return entries;
@@ -132,17 +107,14 @@ function wrapper(plugin_info) {
     });
   };
 
-  // Synchro complète : fusionne clé par clé (pas de remplacement en bloc),
-  // applique localement ce qui vient du cloud si plus récent, puis renvoie
-  // le résultat fusionné pour que le cloud reflète aussi les deux côtés.
   self.syncNow = function () {
     self.showStatus('Synchronisation...');
     self.fetchRemote()
       .then(function (remoteEntries) {
         const localEntries = self.buildLocalEntries();
-        const tsMap = self.getTsMap();
-        let appliedCount = 0;
         const merged = {};
+        const newMeta = {};
+        let appliedCount = 0;
 
         const allKeys = new Set(
           Object.keys(localEntries).concat(Object.keys(remoteEntries))
@@ -153,20 +125,21 @@ function wrapper(plugin_info) {
           const remote = remoteEntries[k];
 
           if (remote && (!local || remote.ts > local.ts)) {
-            // le cloud a une version plus récente (ou la clé n'existe pas encore localement)
-            self.origSetItem(k, remote.value);
-            tsMap[k] = remote.ts;
+            // le cloud a une version plus récente (ou clé absente localement)
+            localStorage.setItem(k, remote.value);
             merged[k] = remote;
+            newMeta[k] = { value: remote.value, ts: remote.ts };
             appliedCount++;
           } else if (local) {
-            // la version locale est la plus récente (ou seule à exister)
             merged[k] = local;
+            newMeta[k] = { value: local.value, ts: local.ts };
           } else if (remote) {
             merged[k] = remote;
+            newMeta[k] = { value: remote.value, ts: remote.ts };
           }
         });
 
-        self.setTsMap(tsMap);
+        self.setMeta(newMeta);
 
         return self.pushMerged(merged).then(function () {
           self.showStatus(
@@ -184,9 +157,6 @@ function wrapper(plugin_info) {
   };
 
   const setup = function () {
-    self.patchLocalStorage();
-    self.initTsMapForExistingKeys();
-
     self.showStatus('Plugin chargé, démarrage...');
     self.syncNow();
     setInterval(self.syncNow, self.SYNC_INTERVAL_MS);
@@ -199,10 +169,6 @@ function wrapper(plugin_info) {
       self.showStatus('Impossible d\'ajouter le bouton toolbox.');
     }
   };
-
-  // Patch appliqué immédiatement (avant même setup) pour capter les écritures
-  // des autres plugins dès que possible après le chargement de la page.
-  self.patchLocalStorage();
 
   setup.info = plugin_info;
   if (!window.bootPlugins) window.bootPlugins = [];
