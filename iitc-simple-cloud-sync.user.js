@@ -2,9 +2,9 @@
 // @id             iitc-plugin-simple-cloud-sync
 // @name           IITC plugin: Simple Cloud Sync (perso)
 // @category       Misc
-// @version        0.1.0
+// @version        0.2.0
 // @namespace      https://github.com/iitc-project/ingress-intel-total-conversion
-// @description    Synchronise les données localStorage des plugins IITC (clés, uniques, bookmarks, etc.) entre vos propres appareils via un petit backend Google Apps Script.
+// @description    Synchronise les données localStorage des plugins IITC (clés, uniques, bookmarks, etc.) entre vos propres appareils via JSONBin.io.
 // @include        https://intel.ingress.com/*
 // @match          https://intel.ingress.com/*
 // @grant          none
@@ -17,12 +17,13 @@ function wrapper(plugin_info) {
   const self = window.plugin.simpleCloudSync;
 
   // ==================== CONFIGURATION - À MODIFIER ====================
-  // Collez ici l'URL "/exec" obtenue après déploiement du Apps Script
-  self.ENDPOINT = 'https://script.google.com/macros/s/AKfycbyymk0Uz8dOKYDnAUipHIZaQPuiPsTsB4mIkUVbd2kUOri5HLkk7T0jRCca2Lnx86U/exec';
-  // Doit être identique au TOKEN défini côté Apps Script
-  self.TOKEN = 'Diligence-Hurried-Anthem-Tacky-Expensive-Yeast9';
-  // Fréquence de synchro automatique (millisecondes)
-  self.SYNC_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes
+  // Sur jsonbin.io : créez un compte gratuit, un Bin (contenu initial: {"ts":0,"data":{}}),
+  // puis récupérez l'ID du bin (dans l'URL) et votre X-Master-Key (page "API Keys").
+  self.BIN_ID = '6aa45dc1ffd5d16053fba21b';
+  self.API_KEY = '***';
+  self.ENDPOINT = 'https://api.jsonbin.io/v3/b/' + self.BIN_ID;
+  // Fréquence de synchro automatique (millisecondes). 5 min = reste large sous le quota gratuit.
+  self.SYNC_INTERVAL_MS = 5 * 60 * 1000;
   // Préfixe des clés localStorage à synchroniser (convention IITC standard)
   self.KEY_PREFIX = 'plugin-';
   // =======================================================================
@@ -43,7 +44,7 @@ function wrapper(plugin_info) {
   };
 
   self.applySnapshot = function (snap) {
-    Object.keys(snap).forEach(function (k) {
+    Object.keys(snap || {}).forEach(function (k) {
       localStorage.setItem(k, snap[k]);
     });
   };
@@ -56,21 +57,27 @@ function wrapper(plugin_info) {
     localStorage.setItem('plugin-simpleCloudSync-ts', String(ts));
   };
 
+  self.fetchRemote = function () {
+    return fetch(self.ENDPOINT + '/latest', {
+      headers: { 'X-Master-Key': self.API_KEY }
+    }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    }).then(function (res) {
+      return res.record || { ts: 0, data: {} };
+    });
+  };
+
   self.pull = function (callback) {
-    fetch(self.ENDPOINT + '?token=' + encodeURIComponent(self.TOKEN))
-      .then(function (r) { return r.json(); })
-      .then(function (res) {
-        if (res.error) {
-          self.log('Erreur pull: ' + res.error);
+    self.fetchRemote()
+      .then(function (record) {
+        const localTs = self.getLocalTs();
+        if ((record.ts || 0) > localTs) {
+          self.applySnapshot(record.data);
+          self.setLocalTs(record.ts);
+          self.log('Données appliquées depuis le cloud (ts=' + record.ts + '). Rechargez la page pour tout prendre en compte.');
         } else {
-          const localTs = self.getLocalTs();
-          if (res.ts > localTs) {
-            self.applySnapshot(res.data);
-            self.setLocalTs(res.ts);
-            self.log('Données appliquées depuis le cloud (ts=' + res.ts + '). Rechargez la page pour tout prendre en compte.');
-          } else {
-            self.log('Rien de plus récent côté cloud.');
-          }
+          self.log('Rien de plus récent côté cloud.');
         }
         if (callback) callback();
       })
@@ -81,30 +88,34 @@ function wrapper(plugin_info) {
   };
 
   self.push = function () {
-    const ts = Date.now();
-    const body = {
-      token: self.TOKEN,
-      ts: ts,
-      data: self.getLocalSnapshot()
-    };
-    fetch(self.ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // évite le preflight CORS
-      body: JSON.stringify(body)
-    })
-      .then(function (r) { return r.json(); })
-      .then(function (res) {
-        if (res.error === 'stale') {
-          self.log('Le cloud a une version plus récente : on la récupère puis on réessaie.');
-          self.pull(function () { self.push(); });
-          return;
+    self.fetchRemote()
+      .then(function (record) {
+        const localTs = self.getLocalTs();
+        if ((record.ts || 0) > localTs) {
+          // le cloud a une version plus récente qu'on n'a pas encore : on l'applique
+          // plutôt que d'écraser, et on retentera le push au prochain cycle
+          self.applySnapshot(record.data);
+          self.setLocalTs(record.ts);
+          self.log('Version distante plus récente : appliquée localement, push différé.');
+          return null;
         }
-        if (res.error) {
-          self.log('Erreur push: ' + res.error);
-          return;
-        }
-        self.setLocalTs(res.ts);
-        self.log('Données envoyées vers le cloud (ts=' + res.ts + ')');
+        const ts = Date.now();
+        const body = { ts: ts, data: self.getLocalSnapshot() };
+        return fetch(self.ENDPOINT, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Master-Key': self.API_KEY,
+            'X-Bin-Versioning': 'false'
+          },
+          body: JSON.stringify(body)
+        }).then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        }).then(function () {
+          self.setLocalTs(ts);
+          self.log('Données envoyées vers le cloud (ts=' + ts + ')');
+        });
       })
       .catch(function (err) { self.log('Erreur réseau (push): ' + err); });
   };
@@ -115,10 +126,10 @@ function wrapper(plugin_info) {
   };
 
   const setup = function () {
-    // Synchro initiale au chargement de la page (récupère les données des autres appareils)
+    // Synchro initiale au chargement de la page
     self.pull();
 
-    // Synchro automatique périodique (envoi des changements locaux)
+    // Synchro automatique périodique
     setInterval(self.push, self.SYNC_INTERVAL_MS);
 
     // Bouton manuel dans la barre d'outils IITC
