@@ -20,7 +20,7 @@ function wrapper(plugin_info) {
   self.BIN_ID = '6aa45dc1ffd5d16053fba21b';
   self.API_KEY = '***';
   self.ENDPOINT = 'https://api.jsonbin.io/v3/b/' + self.BIN_ID;
-  self.SYNC_INTERVAL_MS = 5 * 60 * 1000;
+  self.SYNC_INTERVAL_MS = 1 * 60 * 1000;
   self.KEY_PREFIX = 'plugin-';
   // Passez à true pour réafficher l'encart de statut sur la carte (diagnostic mobile)
   self.DEBUG = false;
