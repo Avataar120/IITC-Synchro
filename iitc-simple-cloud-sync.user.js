@@ -2,9 +2,9 @@
 // @id             iitc-plugin-simple-cloud-sync
 // @name           IITC plugin: Simple Cloud Sync (perso)
 // @category       Misc
-// @version        0.3.0
+// @version        0.4.0
 // @namespace      https://github.com/iitc-project/ingress-intel-total-conversion
-// @description    Synchronise les données localStorage des plugins IITC (clés, uniques, bookmarks, etc.) entre vos propres appareils via JSONBin.io. Affiche son statut directement sur la carte (utile sur mobile sans console).
+// @description    Synchronise les données localStorage des plugins IITC entre vos appareils via JSONBin.io. Statut affiché directement sur la carte.
 // @include        https://intel.ingress.com/*
 // @match          https://intel.ingress.com/*
 // @grant          none
@@ -24,23 +24,26 @@ function wrapper(plugin_info) {
   self.KEY_PREFIX = 'plugin-';
   // =======================================================================
 
-  // ---- Indicateur visuel sur la carte (pas besoin de console) ----
   self.showStatus = function (msg) {
     console.log('[SimpleCloudSync] ' + msg);
-    let el = document.getElementById('simpleCloudSyncStatus');
-    if (!el) {
-      el = document.createElement('div');
-      el.id = 'simpleCloudSyncStatus';
-      el.style.cssText = [
-        'position:fixed', 'bottom:6px', 'left:6px', 'z-index:99999',
-        'background:rgba(0,0,0,0.85)', 'color:#ffce00', 'font-size:11px',
-        'font-family:sans-serif', 'padding:4px 8px', 'border-radius:4px',
-        'max-width:85vw', 'white-space:pre-wrap', 'pointer-events:none'
-      ].join(';');
-      (document.body || document.documentElement).appendChild(el);
+    try {
+      let el = document.getElementById('simpleCloudSyncStatus');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'simpleCloudSyncStatus';
+        el.style.cssText = [
+          'position:fixed', 'bottom:6px', 'left:6px', 'z-index:99999',
+          'background:rgba(0,0,0,0.85)', 'color:#ffce00', 'font-size:11px',
+          'font-family:sans-serif', 'padding:4px 8px', 'border-radius:4px',
+          'max-width:85vw', 'white-space:pre-wrap', 'pointer-events:none'
+        ].join(';');
+        (document.body || document.documentElement).appendChild(el);
+      }
+      const time = new Date().toLocaleTimeString();
+      el.textContent = '[Sync ' + time + '] ' + msg;
+    } catch (e) {
+      // ignore DOM errors, console.log reste notre filet de sécurité
     }
-    const time = new Date().toLocaleTimeString();
-    el.textContent = '[Sync ' + time + '] ' + msg;
   };
 
   self.getLocalSnapshot = function () {
@@ -89,7 +92,7 @@ function wrapper(plugin_info) {
           self.setLocalTs(record.ts);
           self.showStatus('Appliqué depuis le cloud (ts=' + record.ts + '). Rechargez pour tout voir.');
         } else {
-          self.showStatus('OK, rien de plus récent côté cloud (local ts=' + localTs + ', cloud ts=' + (record.ts || 0) + ').');
+          self.showStatus('OK, rien de plus récent (local=' + localTs + ', cloud=' + (record.ts || 0) + ').');
         }
         if (callback) callback();
       })
@@ -139,9 +142,13 @@ function wrapper(plugin_info) {
     self.showStatus('Plugin chargé, démarrage...');
     self.pull();
     setInterval(self.push, self.SYNC_INTERVAL_MS);
-    $('#toolbox').append(
-      '<a onclick="window.plugin.simpleCloudSync.syncNow(); return false;" title="Forcer la synchronisation cloud">Sync cloud</a>'
-    );
+    try {
+      $('#toolbox').append(
+        '<a onclick="window.plugin.simpleCloudSync.syncNow(); return false;" title="Forcer la synchronisation cloud">Sync cloud</a>'
+      );
+    } catch (e) {
+      self.showStatus('Impossible d\'ajouter le bouton toolbox (pas grave, le sync auto fonctionne quand même).');
+    }
   };
 
   setup.info = plugin_info;
@@ -150,14 +157,13 @@ function wrapper(plugin_info) {
   if (window.iitcLoaded && typeof setup === 'function') setup();
 }
 
-const script = document.createElement('script');
-const info = {};
+// Exécution directe, SANS passer par l'injection <script> (bloquée par la CSP sur certains WebView/mobile)
+var plugin_info = {};
 if (typeof GM_info !== 'undefined' && GM_info && GM_info.script) {
-  info.script = {
+  plugin_info.script = {
     version: GM_info.script.version,
     name: GM_info.script.name,
     description: GM_info.script.description
   };
 }
-script.appendChild(document.createTextNode('(' + wrapper + ')(' + JSON.stringify(info) + ');'));
-(document.body || document.head || document.documentElement).appendChild(script);
+wrapper(plugin_info);
