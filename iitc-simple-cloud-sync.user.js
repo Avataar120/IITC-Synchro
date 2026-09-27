@@ -150,7 +150,7 @@ function wrapper(plugin_info) {
       buttons: {
         'OK': function () {
           const pw = $('#simpleCloudSyncPassword').val();
-          if (!pw || pw.length < 4) return;
+          if (!pw) return;
           localStorage.setItem(self.PASSWORD_KEY, pw);
           $(this).dialog('close');
           self.syncNow();
@@ -191,12 +191,21 @@ function wrapper(plugin_info) {
       body: JSON.stringify({ user: user, since: firstSync ? 0 : (state.rev || 0), entries: sent })
     })
       .then(function (r) {
-        if (r.status === 401) {
-          localStorage.removeItem(self.PASSWORD_KEY);
-          self.askPassword('Mot de passe incorrect pour cet agent.');
-        }
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        return r.json();
+        if (r.ok) return r.json();
+        return r.json().catch(function () { return {}; }).then(function (err) {
+          if (r.status === 401) {
+            localStorage.removeItem(self.PASSWORD_KEY);
+            self.askPassword('Mot de passe incorrect pour cet agent.');
+          } else if (r.status === 400 && err.error === 'weak password') {
+            localStorage.removeItem(self.PASSWORD_KEY);
+            self.askPassword('Pour un nouvel agent, le mot de passe doit faire au moins ' + err.min + ' caractères.');
+          } else if (r.status === 429) {
+            throw new Error('trop de tentatives, réessayez plus tard');
+          } else if (r.status === 413) {
+            throw new Error('données trop volumineuses pour le serveur');
+          }
+          throw new Error('HTTP ' + r.status);
+        });
       })
       .then(function (res) {
         Object.keys(sent).forEach(function (k) { meta[k] = sent[k]; });
