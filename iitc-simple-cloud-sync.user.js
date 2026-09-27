@@ -3,7 +3,7 @@
 // @id              simplecloudsync@avataar120
 // @name            Simple Cloud Sync
 // @category        Misc
-// @version         1.1.1.20260927
+// @version         1.2.0.20260927
 // @description     Syncs the localStorage data of your IITC plugins (bookmarks, draw tools, settings…) across all your devices. Each agent has a private, password-protected space on the sync server, keyed by the logged-in agent name. Per-key merge, most recent change wins; the server is only contacted when something changed.
 // @downloadURL     https://github.com/Avataar120/IITC-Synchro/raw/main/iitc-simple-cloud-sync.user.js
 // @updateURL       https://github.com/Avataar120/IITC-Synchro/raw/main/iitc-simple-cloud-sync.meta.js
@@ -21,10 +21,15 @@
 function wrapper(plugin_info) {
   if (typeof window.plugin !== 'function') window.plugin = function () {};
   plugin_info.buildName = 'main';
-  plugin_info.dateTimeVersion = '2026-09-27-154100';
+  plugin_info.dateTimeVersion = '2026-09-27-154452';
   plugin_info.pluginId = 'simpleCloudSync';
 
   const changelog = [{
+    version: '1.2.0',
+    changes: [
+      'NEW: Every text of the plugin is in English, and the toolbox link is now called "Cloud Sync".',
+    ],
+  }, {
     version: '1.1.1',
     changes: [
       'FIX: The sync server is protected against account takeover, password guessing and storage abuse.',
@@ -55,26 +60,26 @@ function wrapper(plugin_info) {
   const self = window.plugin.simpleCloudSync;
 
   // ==================== CONFIGURATION ====================
-  // URL du serveur de synchro, sans slash final
+  // Sync server URL, without trailing slash
   self.ENDPOINT = 'https://iitcsimplesync.avataar120.com';
-  // Vérification locale des changements (aucun appel réseau si rien n'a changé)
+  // Local change check (no network call when nothing changed)
   self.LOCAL_CHECK_MS = 30 * 1000;
-  // Récupération des changements des autres appareils, seulement si l'onglet est visible
+  // Fetch changes made on other devices, only while the tab is visible
   self.REMOTE_PULL_MS = 10 * 60 * 1000;
   self.KEY_PREFIX = 'plugin-';
-  // Passez à true pour réafficher l'encart de statut sur la carte (diagnostic mobile)
+  // Set to true to show the status box on the map (mobile troubleshooting)
   self.DEBUG = false;
   // =======================================================================
 
-  // Métadonnées : pour chaque clé, la dernière valeur connue-synchronisée + son timestamp.
-  // Sert à détecter si une clé a changé localement depuis la dernière synchro,
-  // sans dépendre d'un patch de localStorage.setItem (peu fiable selon l'environnement).
+  // Metadata: for each key, the last synced value and its timestamp.
+  // Used to detect keys changed locally since the last sync,
+  // without patching localStorage.setItem (unreliable in some environments).
   self.META_KEY = 'plugin-simpleCloudSync-meta';
-  // Dernière révision serveur vue (hors préfixe KEY_PREFIX : jamais synchronisée)
+  // Last server revision seen (outside KEY_PREFIX: never synced)
   self.STATE_KEY = 'simpleCloudSync-state';
-  // Mot de passe de l'agent sur ce serveur, propre à cet appareil (jamais synchronisé)
+  // Agent password on this server, stored on this device only (never synced)
   self.PASSWORD_KEY = 'simpleCloudSync-password';
-  // Clés laissées par d'anciennes versions de la synchro : jamais synchronisées, effacées au démarrage
+  // Keys left by older versions of the sync: never synced, removed at startup
   self.OBSOLETE_KEYS = ['plugin-simpleCloudSync-ts', 'plugin-simpleCloudSync-tsmap', 'plugin-sync-data-uuid'];
 
   self.showStatus = function (msg) {
@@ -106,7 +111,7 @@ function wrapper(plugin_info) {
     localStorage.setItem(self.META_KEY, JSON.stringify(meta));
   };
 
-  // Pseudo de l'agent connecté : chaque agent a son propre espace sur le serveur
+  // Logged-in agent name: each agent has its own space on the server
   self.getUser = function () {
     return (window.PLAYER && window.PLAYER.nickname) || null;
   };
@@ -115,8 +120,8 @@ function wrapper(plugin_info) {
     try { return JSON.parse(localStorage.getItem(self.STATE_KEY) || '{}'); } catch (e) { return {}; }
   };
 
-  // Clés à envoyer : celles modifiées depuis la dernière synchro (ts frais),
-  // et, au premier contact avec ce serveur, toutes les autres (ts d'origine).
+  // Keys to send: those changed since the last sync (fresh ts),
+  // and, on first contact with this server, all the others (original ts).
   self.buildChangedEntries = function (meta, firstSync) {
     const entries = {};
     for (let i = 0; i < localStorage.length; i++) {
@@ -138,15 +143,15 @@ function wrapper(plugin_info) {
     return localStorage.getItem(self.PASSWORD_KEY) || '';
   };
 
-  // Le premier appareil qui synchronise un agent choisit son mot de passe ;
-  // les appareils suivants doivent saisir le même.
+  // The first device that syncs an agent chooses its password;
+  // the agent's other devices must enter the same one.
   self.askPassword = function (error) {
     if (self.passwordDialogOpen) return;
     self.passwordDialogOpen = true;
     const html = $('<div>')
       .append($('<p>').text(
-        'Mot de passe de synchro pour l\'agent ' + self.getUser() + '. ' +
-        'À la première utilisation, il est choisi ici ; sur vos autres appareils, saisissez le même.'
+        'Sync password for agent ' + self.getUser() + '. ' +
+        'On first use you choose it here; on your other devices, enter the same one.'
       ))
       .append(error ? $('<p style="color:#f66">').text(error) : '')
       .append('<input type="password" id="simpleCloudSyncPassword" style="width:95%" autocomplete="current-password">');
@@ -171,10 +176,10 @@ function wrapper(plugin_info) {
 
   self.syncNow = function (manual) {
     const user = self.getUser();
-    if (!user) return self.showStatus('Agent inconnu, synchro impossible.');
+    if (!user) return self.showStatus('Unknown agent, cannot sync.');
     const password = self.getPassword();
     if (!password) {
-      // Demandé une seule fois par chargement, puis sur clic du bouton
+      // Asked once per page load, then when the toolbox link is clicked
       if (manual || !self.passwordAsked) self.askPassword();
       self.passwordAsked = true;
       return;
@@ -182,7 +187,7 @@ function wrapper(plugin_info) {
     if (self.busy) return;
     self.busy = true;
     self.lastSync = Date.now();
-    self.showStatus('Synchronisation...');
+    self.showStatus('Syncing...');
 
     const meta = self.getMeta();
     const state = self.getState();
@@ -202,14 +207,14 @@ function wrapper(plugin_info) {
         return r.json().catch(function () { return {}; }).then(function (err) {
           if (r.status === 401) {
             localStorage.removeItem(self.PASSWORD_KEY);
-            self.askPassword('Mot de passe incorrect pour cet agent.');
+            self.askPassword('Wrong password for this agent.');
           } else if (r.status === 400 && err.error === 'weak password') {
             localStorage.removeItem(self.PASSWORD_KEY);
-            self.askPassword('Pour un nouvel agent, le mot de passe doit faire au moins ' + err.min + ' caractères.');
+            self.askPassword('For a new agent, the password must be at least ' + err.min + ' characters long.');
           } else if (r.status === 429) {
-            throw new Error('trop de tentatives, réessayez plus tard');
+            throw new Error('too many attempts, try again later');
           } else if (r.status === 413) {
-            throw new Error('données trop volumineuses pour le serveur');
+            throw new Error('data too large for the server');
           }
           throw new Error('HTTP ' + r.status);
         });
@@ -217,8 +222,8 @@ function wrapper(plugin_info) {
       .then(function (res) {
         Object.keys(sent).forEach(function (k) { meta[k] = sent[k]; });
 
-        // Le serveur renvoie les clés changées ailleurs, et la version gagnante
-        // des clés envoyées qui ont perdu la fusion.
+        // The server returns the keys changed elsewhere, and the winning version
+        // of sent keys that lost the merge.
         let appliedCount = 0;
         Object.keys(res.entries).forEach(function (k) {
           if (self.OBSOLETE_KEYS.indexOf(k) !== -1) return;
@@ -234,15 +239,15 @@ function wrapper(plugin_info) {
         localStorage.setItem(self.STATE_KEY, JSON.stringify({ endpoint: self.ENDPOINT, user: user, rev: res.rev }));
 
         self.showStatus(
-          'OK : ' + Object.keys(sent).length + ' clé(s) envoyée(s), ' +
-          appliedCount + ' reçue(s) du cloud.'
+          'OK: ' + Object.keys(sent).length + ' key(s) sent, ' +
+          appliedCount + ' received from the cloud.'
         );
         if (appliedCount > 0) {
-          self.showStatus('Rechargez la page pour tout prendre en compte.');
+          self.showStatus('Reload the page to apply everything.');
         }
       })
       .catch(function (err) {
-        self.showStatus('ERREUR sync: ' + err.message);
+        self.showStatus('Sync ERROR: ' + err.message);
       })
       .then(function () { self.busy = false; });
   };
@@ -251,15 +256,15 @@ function wrapper(plugin_info) {
     return Object.keys(self.buildChangedEntries(self.getMeta(), false)).length > 0;
   };
 
-  // Appelé régulièrement : ne contacte le serveur que s'il y a quelque chose à
-  // envoyer, ou si le dernier échange date de plus de REMOTE_PULL_MS (onglet visible).
+  // Called periodically: contacts the server only when there is something to
+  // send, or when the last exchange is older than REMOTE_PULL_MS (tab visible).
   self.tick = function () {
     if (self.hasLocalChanges()) return self.syncNow();
     if (!document.hidden && Date.now() - self.lastSync >= self.REMOTE_PULL_MS) self.syncNow();
   };
 
-  // Fermeture de la page : envoi des derniers changements sans attendre de réponse
-  // (text/plain => pas de requête préalable CORS).
+  // Page hidden or closed: send pending changes without waiting for a reply
+  // (text/plain => no CORS preflight).
   self.flushOnExit = function () {
     const user = self.getUser();
     const password = self.getPassword();
@@ -280,7 +285,7 @@ function wrapper(plugin_info) {
   };
 
   const setup = function () {
-    self.showStatus('Plugin chargé, démarrage...');
+    self.showStatus('Plugin loaded, starting...');
     self.removeObsoleteKeys();
     self.syncNow();
     setInterval(self.tick, self.LOCAL_CHECK_MS);
@@ -293,10 +298,10 @@ function wrapper(plugin_info) {
 
     try {
       $('#toolbox').append(
-        '<a onclick="window.plugin.simpleCloudSync.syncNow(true); return false;" title="Forcer la synchronisation cloud">Sync cloud</a>'
+        '<a onclick="window.plugin.simpleCloudSync.syncNow(true); return false;" title="Sync with the cloud now">Cloud Sync</a>'
       );
     } catch (e) {
-      self.showStatus('Impossible d\'ajouter le bouton toolbox.');
+      self.showStatus('Could not add the toolbox link.');
     }
   };
 
@@ -307,7 +312,7 @@ function wrapper(plugin_info) {
   if (window.iitcLoaded && typeof setup === 'function') setup();
 }
 
-// Exécution directe (sans injection <script>, non nécessaire et bloquée sur certains mobiles)
+// Direct execution (no <script> injection: not needed, and blocked on some mobile browsers)
 var plugin_info = {};
 if (typeof GM_info !== 'undefined' && GM_info && GM_info.script) {
   plugin_info.script = {
