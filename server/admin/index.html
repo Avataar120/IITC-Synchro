@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Cloud Sync Admin</title>
+  <link rel="icon" href="favicon.png">
+  <link rel="stylesheet" href="admin.css">
+  <script src="admin.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="favicon.png" alt="" width="28" height="28">
+      <span>Simple Cloud Sync <em>admin</em></span>
+    </div>
+    <nav id="nav" hidden>
+      <span id="whoami" class="muted"></span>
+      <button type="button" id="btnPassword" class="ghost">Change password</button>
+      <button type="button" id="btnLogout" class="ghost">Log out</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="loginView" class="card login" hidden>
+      <h1>Sign in</h1>
+      <form id="loginForm" autocomplete="on">
+        <label>User
+          <input name="user" autocomplete="username" required>
+        </label>
+        <label>Password
+          <input name="password" type="password" autocomplete="current-password" required>
+        </label>
+        <p id="loginError" class="error" hidden></p>
+        <button type="submit" class="primary">Sign in</button>
+      </form>
+    </section>
+
+    <section id="mainView" hidden>
+      <div id="defaultWarning" class="banner" hidden>
+        The admin account still uses its default password.
+        <button type="button" id="btnWarnPassword" class="link">Change it now</button>
+      </div>
+
+      <div class="stats" id="stats"></div>
+
+      <div class="toolbar">
+        <input id="filter" type="search" placeholder="Filter agents or plugins" aria-label="Filter">
+        <button type="button" id="btnRefresh" class="ghost">Refresh</button>
+      </div>
+
+      <div id="agents"></div>
+      <p id="empty" class="muted center" hidden>No agent yet.</p>
+    </section>
+  </main>
+
+  <dialog id="passwordDialog">
+    <form id="passwordForm" method="dialog">
+      <h2>Change admin password</h2>
+      <label>Current password
+        <input name="current" type="password" autocomplete="current-password" required>
+      </label>
+      <label>New password
+        <input name="password" type="password" autocomplete="new-password" minlength="8" required>
+      </label>
+      <label>Confirm new password
+        <input name="confirm" type="password" autocomplete="new-password" minlength="8" required>
+      </label>
+      <p id="passwordError" class="error" hidden></p>
+      <div class="actions">
+        <button type="button" class="ghost" data-close>Cancel</button>
+        <button type="submit" class="primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="resetDialog">
+    <form method="dialog">
+      <h2>Reset password</h2>
+      <div id="resetConfirm">
+        <p>Reset the sync password of <strong class="reset-user"></strong>?</p>
+        <p class="muted">Their devices will stop syncing until the new password is entered in the plugin. Synced data is kept.</p>
+        <p id="resetError" class="error" hidden></p>
+        <div class="actions">
+          <button type="button" class="ghost" data-close>Cancel</button>
+          <button type="button" id="btnResetConfirm" class="danger">Reset</button>
+        </div>
+      </div>
+      <div id="resetDone" hidden>
+        <p>New password for <strong class="reset-user"></strong>:</p>
+        <div class="secret">
+          <code id="resetPassword"></code>
+          <button type="button" id="btnCopy" class="ghost">Copy</button>
+        </div>
+        <p class="muted">Shown only once. Send it to the agent: they enter it in the plugin on each of their devices.</p>
+        <div class="actions">
+          <button type="button" class="primary" data-close>Done</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>

@@ -4,6 +4,9 @@ version: "3.8"
 services:
   app:
     image: 127.0.0.1:5000/iitc-sync:latest
+    # Identifiants admin initiaux (fichier non versionné, voir .env.example)
+    env_file:
+      - .env
     volumes:
       - /home/ubuntu/iitc-sync/data:/data
     read_only: true
