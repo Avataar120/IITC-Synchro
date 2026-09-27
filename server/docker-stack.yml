@@ -1,0 +1,30 @@
+version: "3.8"
+
+# Déploiement : ./deploy.sh
+services:
+  app:
+    image: 127.0.0.1:5000/iitc-sync:latest
+    volumes:
+      - /home/ubuntu/iitc-sync/data:/data
+    networks:
+      - traefik_web
+    deploy:
+      restart_policy:
+        condition: any
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=traefik_web
+        - traefik.http.routers.iitcsync-http.entrypoints=insecure
+        - traefik.http.routers.iitcsync-http.rule=Host(`iitcsimplesync.avataar120.com`)
+        - traefik.http.routers.iitcsync-http.middlewares=https-redirect@file
+        - traefik.http.routers.iitcsync-http.service=iitcsync-app
+        - traefik.http.routers.iitcsync-https.entrypoints=secure
+        - traefik.http.routers.iitcsync-https.rule=Host(`iitcsimplesync.avataar120.com`)
+        - traefik.http.routers.iitcsync-https.service=iitcsync-app
+        - traefik.http.routers.iitcsync-https.tls=true
+        - traefik.http.routers.iitcsync-https.tls.certresolver=letsencrypt
+        - traefik.http.services.iitcsync-app.loadbalancer.server.port=8080
+
+networks:
+  traefik_web:
+    external: true

@@ -1,26 +1,47 @@
 // ==UserScript==
-// @id             iitc-plugin-simple-cloud-sync
-// @name           IITC plugin: Simple Cloud Sync (perso)
-// @category       Misc
-// @version        3.0.0
-// @namespace      https://github.com/iitc-project/ingress-intel-total-conversion
-// @description    Synchronise les données localStorage des plugins IITC entre vos appareils via JSONBin.io, avec fusion par clé basée sur la détection de changement de contenu.
-// @include        https://intel.ingress.com/*
-// @match          https://intel.ingress.com/*
-// @grant          none
+// @author          Avataar120
+// @id              simplecloudsync@avataar120
+// @name            Simple Cloud Sync
+// @category        Misc
+// @version         4.0.0.20260927
+// @description     Syncs the localStorage data of your IITC plugins (bookmarks, draw tools, settings…) across all your devices. Each agent has a private, password-protected space on the sync server, keyed by the logged-in agent name. Per-key merge, most recent change wins; the server is only contacted when something changed.
+// @downloadURL     https://github.com/Avataar120/IITC-Synchro/raw/main/iitc-simple-cloud-sync.user.js
+// @updateURL       https://github.com/Avataar120/IITC-Synchro/raw/main/iitc-simple-cloud-sync.meta.js
+// @supportURL      https://github.com/Avataar120/IITC-Synchro/issues
+// @namespace       https://github.com/Avataar120/IITC-Synchro
+// @issueTracker    https://github.com/Avataar120/IITC-Synchro/issues
+// @homepageURL     https://github.com/Avataar120/IITC-Synchro/
+// @match           https://intel.ingress.com/*
+// @include         https://intel.ingress.com/*
+// @grant           none
 // ==/UserScript==
 
 function wrapper(plugin_info) {
   if (typeof window.plugin !== 'function') window.plugin = function () {};
+  plugin_info.buildName = 'main';
+  plugin_info.dateTimeVersion = '2026-09-27-000000';
+  plugin_info.pluginId = 'simpleCloudSync';
+
+  const changelog = [{
+    version: '4.0.0',
+    changes: [
+      'NEW: Own sync server instead of JSONBin.io: no more request quota.',
+      'NEW: Multi-agent: each agent has a private space, keyed by the logged-in agent name and protected by a password chosen on first sync.',
+      'NEW: Far fewer requests: local changes are detected without any network call, only changed keys are sent, and other devices are checked at most every 10 minutes while the tab is visible.',
+      'NEW: Pending changes are sent when the page is hidden or closed.',
+    ],
+  }];
 
   window.plugin.simpleCloudSync = function () {};
   const self = window.plugin.simpleCloudSync;
 
-  // ==================== CONFIGURATION - À MODIFIER ====================
-  self.BIN_ID = '6aa45dc1ffd5d16053fba21b';
-  self.API_KEY = '***';
-  self.ENDPOINT = 'https://api.jsonbin.io/v3/b/' + self.BIN_ID;
-  self.SYNC_INTERVAL_MS = 1 * 60 * 1000;
+  // ==================== CONFIGURATION ====================
+  // URL du serveur de synchro, sans slash final
+  self.ENDPOINT = 'https://iitcsimplesync.avataar120.com';
+  // Vérification locale des changements (aucun appel réseau si rien n'a changé)
+  self.LOCAL_CHECK_MS = 30 * 1000;
+  // Récupération des changements des autres appareils, seulement si l'onglet est visible
+  self.REMOTE_PULL_MS = 10 * 60 * 1000;
   self.KEY_PREFIX = 'plugin-';
   // Passez à true pour réafficher l'encart de statut sur la carte (diagnostic mobile)
   self.DEBUG = false;
@@ -30,6 +51,10 @@ function wrapper(plugin_info) {
   // Sert à détecter si une clé a changé localement depuis la dernière synchro,
   // sans dépendre d'un patch de localStorage.setItem (peu fiable selon l'environnement).
   self.META_KEY = 'plugin-simpleCloudSync-meta';
+  // Dernière révision serveur vue (hors préfixe KEY_PREFIX : jamais synchronisée)
+  self.STATE_KEY = 'simpleCloudSync-state';
+  // Mot de passe de l'agent sur ce serveur, propre à cet appareil (jamais synchronisé)
+  self.PASSWORD_KEY = 'simpleCloudSync-password';
 
   self.showStatus = function (msg) {
     console.log('[SimpleCloudSync] ' + msg);
@@ -60,110 +85,173 @@ function wrapper(plugin_info) {
     localStorage.setItem(self.META_KEY, JSON.stringify(meta));
   };
 
-  // Construit l'état local actuel, avec un ts "frais" (Date.now()) pour toute clé
-  // dont la valeur a changé depuis la dernière synchro connue (meta), et conserve
-  // le ts précédent pour les clés inchangées.
-  self.buildLocalEntries = function () {
-    const meta = self.getMeta();
+  // Pseudo de l'agent connecté : chaque agent a son propre espace sur le serveur
+  self.getUser = function () {
+    return (window.PLAYER && window.PLAYER.nickname) || null;
+  };
+
+  self.getState = function () {
+    try { return JSON.parse(localStorage.getItem(self.STATE_KEY) || '{}'); } catch (e) { return {}; }
+  };
+
+  // Clés à envoyer : celles modifiées depuis la dernière synchro (ts frais),
+  // et, au premier contact avec ce serveur, toutes les autres (ts d'origine).
+  self.buildChangedEntries = function (meta, firstSync) {
     const entries = {};
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
       if (!k || k.indexOf(self.KEY_PREFIX) !== 0 || k === self.META_KEY) continue;
       const value = localStorage.getItem(k);
       const prev = meta[k];
-      if (prev && prev.value === value) {
-        entries[k] = { value: value, ts: prev.ts || 0 };
-      } else {
-        // valeur absente des meta, ou différente : changement détecté
+      if (!prev || prev.value !== value) {
         entries[k] = { value: value, ts: Date.now() };
+      } else if (firstSync) {
+        entries[k] = { value: value, ts: prev.ts || 0 };
       }
     }
     return entries;
   };
 
-  self.fetchRemote = function () {
-    return fetch(self.ENDPOINT + '/latest', {
-      headers: { 'X-Master-Key': self.API_KEY }
-    }).then(function (r) {
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json();
-    }).then(function (res) {
-      return (res.record && res.record.data) || {};
+  self.getPassword = function () {
+    return localStorage.getItem(self.PASSWORD_KEY) || '';
+  };
+
+  // Le premier appareil qui synchronise un agent choisit son mot de passe ;
+  // les appareils suivants doivent saisir le même.
+  self.askPassword = function (error) {
+    if (self.passwordDialogOpen) return;
+    self.passwordDialogOpen = true;
+    const html = $('<div>')
+      .append($('<p>').text(
+        'Mot de passe de synchro pour l\'agent ' + self.getUser() + '. ' +
+        'À la première utilisation, il est choisi ici ; sur vos autres appareils, saisissez le même.'
+      ))
+      .append(error ? $('<p style="color:#f66">').text(error) : '')
+      .append('<input type="password" id="simpleCloudSyncPassword" style="width:95%" autocomplete="current-password">');
+    window.dialog({
+      html: html,
+      title: 'Simple Cloud Sync',
+      id: 'simpleCloudSyncPassword-dialog',
+      buttons: {
+        'OK': function () {
+          const pw = $('#simpleCloudSyncPassword').val();
+          if (!pw || pw.length < 4) return;
+          localStorage.setItem(self.PASSWORD_KEY, pw);
+          $(this).dialog('close');
+          self.syncNow();
+        }
+      },
+      closeCallback: function () { self.passwordDialogOpen = false; }
     });
   };
 
-  self.pushMerged = function (merged) {
-    return fetch(self.ENDPOINT, {
-      method: 'PUT',
+  self.lastSync = 0;
+
+  self.syncNow = function (manual) {
+    const user = self.getUser();
+    if (!user) return self.showStatus('Agent inconnu, synchro impossible.');
+    const password = self.getPassword();
+    if (!password) {
+      // Demandé une seule fois par chargement, puis sur clic du bouton
+      if (manual || !self.passwordAsked) self.askPassword();
+      self.passwordAsked = true;
+      return;
+    }
+    if (self.busy) return;
+    self.busy = true;
+    self.lastSync = Date.now();
+    self.showStatus('Synchronisation...');
+
+    const meta = self.getMeta();
+    const state = self.getState();
+    const firstSync = state.endpoint !== self.ENDPOINT || state.user !== user;
+    const sent = self.buildChangedEntries(meta, firstSync);
+
+    fetch(self.ENDPOINT + '/sync', {
+      method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Master-Key': self.API_KEY,
-        'X-Bin-Versioning': 'false'
+        'Authorization': 'Bearer ' + password
       },
-      body: JSON.stringify({ ts: Date.now(), data: merged })
-    }).then(function (r) {
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json();
-    });
-  };
+      body: JSON.stringify({ user: user, since: firstSync ? 0 : (state.rev || 0), entries: sent })
+    })
+      .then(function (r) {
+        if (r.status === 401) {
+          localStorage.removeItem(self.PASSWORD_KEY);
+          self.askPassword('Mot de passe incorrect pour cet agent.');
+        }
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function (res) {
+        Object.keys(sent).forEach(function (k) { meta[k] = sent[k]; });
 
-  self.syncNow = function () {
-    self.showStatus('Synchronisation...');
-    self.fetchRemote()
-      .then(function (remoteEntries) {
-        const localEntries = self.buildLocalEntries();
-        const merged = {};
-        const newMeta = {};
+        // Le serveur renvoie les clés changées ailleurs, et la version gagnante
+        // des clés envoyées qui ont perdu la fusion.
         let appliedCount = 0;
-
-        const allKeys = new Set(
-          Object.keys(localEntries).concat(Object.keys(remoteEntries))
-        );
-
-        allKeys.forEach(function (k) {
-          const local = localEntries[k];
-          const remote = remoteEntries[k];
-
-          if (remote && (!local || remote.ts > local.ts)) {
-            // le cloud a une version plus récente (ou clé absente localement)
-            localStorage.setItem(k, remote.value);
-            merged[k] = remote;
-            newMeta[k] = { value: remote.value, ts: remote.ts };
+        Object.keys(res.entries).forEach(function (k) {
+          const e = res.entries[k];
+          if (localStorage.getItem(k) !== e.value) {
+            localStorage.setItem(k, e.value);
             appliedCount++;
-          } else if (local) {
-            merged[k] = local;
-            newMeta[k] = { value: local.value, ts: local.ts };
-          } else if (remote) {
-            merged[k] = remote;
-            newMeta[k] = { value: remote.value, ts: remote.ts };
           }
+          meta[k] = { value: e.value, ts: e.ts };
         });
 
-        self.setMeta(newMeta);
+        self.setMeta(meta);
+        localStorage.setItem(self.STATE_KEY, JSON.stringify({ endpoint: self.ENDPOINT, user: user, rev: res.rev }));
 
-        return self.pushMerged(merged).then(function () {
-          self.showStatus(
-            'OK : ' + appliedCount + ' clé(s) reçue(s) du cloud, ' +
-            Object.keys(merged).length + ' au total synchronisées.'
-          );
-          if (appliedCount > 0) {
-            self.showStatus('Rechargez la page pour tout prendre en compte.');
-          }
-        });
+        self.showStatus(
+          'OK : ' + Object.keys(sent).length + ' clé(s) envoyée(s), ' +
+          appliedCount + ' reçue(s) du cloud.'
+        );
+        if (appliedCount > 0) {
+          self.showStatus('Rechargez la page pour tout prendre en compte.');
+        }
       })
       .catch(function (err) {
         self.showStatus('ERREUR sync: ' + err.message);
-      });
+      })
+      .then(function () { self.busy = false; });
+  };
+
+  self.hasLocalChanges = function () {
+    return Object.keys(self.buildChangedEntries(self.getMeta(), false)).length > 0;
+  };
+
+  // Appelé régulièrement : ne contacte le serveur que s'il y a quelque chose à
+  // envoyer, ou si le dernier échange date de plus de REMOTE_PULL_MS (onglet visible).
+  self.tick = function () {
+    if (self.hasLocalChanges()) return self.syncNow();
+    if (!document.hidden && Date.now() - self.lastSync >= self.REMOTE_PULL_MS) self.syncNow();
+  };
+
+  // Fermeture de la page : envoi des derniers changements sans attendre de réponse
+  // (text/plain => pas de requête préalable CORS).
+  self.flushOnExit = function () {
+    const user = self.getUser();
+    const password = self.getPassword();
+    const sent = self.buildChangedEntries(self.getMeta(), false);
+    if (!user || !password || !Object.keys(sent).length || !navigator.sendBeacon) return;
+    navigator.sendBeacon(self.ENDPOINT + '/sync', JSON.stringify({
+      password: password, user: user, since: 0, entries: sent
+    }));
   };
 
   const setup = function () {
     self.showStatus('Plugin chargé, démarrage...');
     self.syncNow();
-    setInterval(self.syncNow, self.SYNC_INTERVAL_MS);
+    setInterval(self.tick, self.LOCAL_CHECK_MS);
+
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) self.flushOnExit();
+      else if (Date.now() - self.lastSync >= 2 * 60 * 1000) self.syncNow();
+    });
+    window.addEventListener('pagehide', self.flushOnExit);
 
     try {
       $('#toolbox').append(
-        '<a onclick="window.plugin.simpleCloudSync.syncNow(); return false;" title="Forcer la synchronisation cloud">Sync cloud</a>'
+        '<a onclick="window.plugin.simpleCloudSync.syncNow(true); return false;" title="Forcer la synchronisation cloud">Sync cloud</a>'
       );
     } catch (e) {
       self.showStatus('Impossible d\'ajouter le bouton toolbox.');
@@ -171,6 +259,7 @@ function wrapper(plugin_info) {
   };
 
   setup.info = plugin_info;
+  setup.info.changelog = changelog;
   if (!window.bootPlugins) window.bootPlugins = [];
   window.bootPlugins.push(setup);
   if (window.iitcLoaded && typeof setup === 'function') setup();
