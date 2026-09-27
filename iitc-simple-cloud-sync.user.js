@@ -3,7 +3,7 @@
 // @id              simplecloudsync@avataar120
 // @name            Simple Cloud Sync
 // @category        Misc
-// @version         4.0.0.20260927
+// @version         1.0.1.20260927
 // @description     Syncs the localStorage data of your IITC plugins (bookmarks, draw tools, settings…) across all your devices. Each agent has a private, password-protected space on the sync server, keyed by the logged-in agent name. Per-key merge, most recent change wins; the server is only contacted when something changed.
 // @downloadURL     https://github.com/Avataar120/IITC-Synchro/raw/main/iitc-simple-cloud-sync.user.js
 // @updateURL       https://github.com/Avataar120/IITC-Synchro/raw/main/iitc-simple-cloud-sync.meta.js
@@ -19,11 +19,16 @@
 function wrapper(plugin_info) {
   if (typeof window.plugin !== 'function') window.plugin = function () {};
   plugin_info.buildName = 'main';
-  plugin_info.dateTimeVersion = '2026-09-27-000000';
+  plugin_info.dateTimeVersion = '2026-09-27-152743';
   plugin_info.pluginId = 'simpleCloudSync';
 
   const changelog = [{
-    version: '4.0.0',
+    version: '1.0.1',
+    changes: [
+      'FIX: Leftover entries from older sync versions are removed from each device and no longer synced.',
+    ],
+  }, {
+    version: '1.0.0',
     changes: [
       'NEW: Own sync server instead of JSONBin.io: no more request quota.',
       'NEW: Multi-agent: each agent has a private space, keyed by the logged-in agent name and protected by a password chosen on first sync.',
@@ -55,6 +60,8 @@ function wrapper(plugin_info) {
   self.STATE_KEY = 'simpleCloudSync-state';
   // Mot de passe de l'agent sur ce serveur, propre à cet appareil (jamais synchronisé)
   self.PASSWORD_KEY = 'simpleCloudSync-password';
+  // Clés laissées par d'anciennes versions de la synchro : jamais synchronisées, effacées au démarrage
+  self.OBSOLETE_KEYS = ['plugin-simpleCloudSync-ts', 'plugin-simpleCloudSync-tsmap', 'plugin-sync-data-uuid'];
 
   self.showStatus = function (msg) {
     console.log('[SimpleCloudSync] ' + msg);
@@ -101,6 +108,7 @@ function wrapper(plugin_info) {
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
       if (!k || k.indexOf(self.KEY_PREFIX) !== 0 || k === self.META_KEY) continue;
+      if (self.OBSOLETE_KEYS.indexOf(k) !== -1) continue;
       const value = localStorage.getItem(k);
       const prev = meta[k];
       if (!prev || prev.value !== value) {
@@ -190,6 +198,7 @@ function wrapper(plugin_info) {
         // des clés envoyées qui ont perdu la fusion.
         let appliedCount = 0;
         Object.keys(res.entries).forEach(function (k) {
+          if (self.OBSOLETE_KEYS.indexOf(k) !== -1) return;
           const e = res.entries[k];
           if (localStorage.getItem(k) !== e.value) {
             localStorage.setItem(k, e.value);
@@ -238,8 +247,18 @@ function wrapper(plugin_info) {
     }));
   };
 
+  self.removeObsoleteKeys = function () {
+    const meta = self.getMeta();
+    self.OBSOLETE_KEYS.forEach(function (k) {
+      localStorage.removeItem(k);
+      delete meta[k];
+    });
+    self.setMeta(meta);
+  };
+
   const setup = function () {
     self.showStatus('Plugin chargé, démarrage...');
+    self.removeObsoleteKeys();
     self.syncNow();
     setInterval(self.tick, self.LOCAL_CHECK_MS);
 
