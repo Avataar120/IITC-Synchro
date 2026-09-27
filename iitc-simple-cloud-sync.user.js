@@ -3,7 +3,7 @@
 // @id              simplecloudsync@avataar120
 // @name            Simple Cloud Sync
 // @category        Misc
-// @version         1.1.0.20260927
+// @version         1.1.1.20260927
 // @description     Syncs the localStorage data of your IITC plugins (bookmarks, draw tools, settings…) across all your devices. Each agent has a private, password-protected space on the sync server, keyed by the logged-in agent name. Per-key merge, most recent change wins; the server is only contacted when something changed.
 // @downloadURL     https://github.com/Avataar120/IITC-Synchro/raw/main/iitc-simple-cloud-sync.user.js
 // @updateURL       https://github.com/Avataar120/IITC-Synchro/raw/main/iitc-simple-cloud-sync.meta.js
@@ -21,10 +21,17 @@
 function wrapper(plugin_info) {
   if (typeof window.plugin !== 'function') window.plugin = function () {};
   plugin_info.buildName = 'main';
-  plugin_info.dateTimeVersion = '2026-09-27-153225';
+  plugin_info.dateTimeVersion = '2026-09-27-154100';
   plugin_info.pluginId = 'simpleCloudSync';
 
   const changelog = [{
+    version: '1.1.1',
+    changes: [
+      'FIX: The sync server is protected against account takeover, password guessing and storage abuse.',
+      'FIX: New agents need a password of at least 8 characters, and the password window says so.',
+      'FIX: Too many failed attempts and data too large for the server are reported clearly.',
+    ],
+  }, {
     version: '1.1.0',
     changes: [
       'NEW: The plugin has its own logo: a phone and a computer screen linked by two-way arrows.',
