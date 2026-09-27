@@ -55,6 +55,8 @@ function wrapper(plugin_info) {
   self.STATE_KEY = 'simpleCloudSync-state';
   // Mot de passe de l'agent sur ce serveur, propre à cet appareil (jamais synchronisé)
   self.PASSWORD_KEY = 'simpleCloudSync-password';
+  // Clés laissées par d'anciennes versions de la synchro : jamais synchronisées, effacées au démarrage
+  self.OBSOLETE_KEYS = ['plugin-simpleCloudSync-ts', 'plugin-simpleCloudSync-tsmap', 'plugin-sync-data-uuid'];
 
   self.showStatus = function (msg) {
     console.log('[SimpleCloudSync] ' + msg);
@@ -101,6 +103,7 @@ function wrapper(plugin_info) {
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
       if (!k || k.indexOf(self.KEY_PREFIX) !== 0 || k === self.META_KEY) continue;
+      if (self.OBSOLETE_KEYS.indexOf(k) !== -1) continue;
       const value = localStorage.getItem(k);
       const prev = meta[k];
       if (!prev || prev.value !== value) {
@@ -190,6 +193,7 @@ function wrapper(plugin_info) {
         // des clés envoyées qui ont perdu la fusion.
         let appliedCount = 0;
         Object.keys(res.entries).forEach(function (k) {
+          if (self.OBSOLETE_KEYS.indexOf(k) !== -1) return;
           const e = res.entries[k];
           if (localStorage.getItem(k) !== e.value) {
             localStorage.setItem(k, e.value);
@@ -238,8 +242,18 @@ function wrapper(plugin_info) {
     }));
   };
 
+  self.removeObsoleteKeys = function () {
+    const meta = self.getMeta();
+    self.OBSOLETE_KEYS.forEach(function (k) {
+      localStorage.removeItem(k);
+      delete meta[k];
+    });
+    self.setMeta(meta);
+  };
+
   const setup = function () {
     self.showStatus('Plugin chargé, démarrage...');
+    self.removeObsoleteKeys();
     self.syncNow();
     setInterval(self.tick, self.LOCAL_CHECK_MS);
 
