@@ -6,11 +6,18 @@ services:
     image: 127.0.0.1:5000/iitc-sync:latest
     volumes:
       - /home/ubuntu/iitc-sync/data:/data
+    read_only: true
+    cap_drop:
+      - ALL
     networks:
       - traefik_web
     deploy:
       restart_policy:
         condition: any
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
       labels:
         - traefik.enable=true
         - traefik.docker.network=traefik_web
