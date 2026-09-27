@@ -4,6 +4,8 @@
 
 const http = require('http');
 const crypto = require('crypto');
+const net = require('net');
+const tls = require('tls');
 const fs = require('fs');
 const path = require('path');
 
@@ -113,6 +115,124 @@ function clientIp(req) {
   return xff[xff.length - 1].trim() || req.socket.remoteAddress;
 }
 
+// ---- Notification par mail ----
+
+// Envoi SMTP authentifié (AUTH LOGIN), configuré par le fichier .env :
+// SMTP_TLS=true pour du TLS direct (port 465), sinon STARTTLS obligatoire (port 587),
+// les identifiants ne circulant jamais en clair.
+// Sans NOTIFY_EMAIL, SMTP_HOST ou identifiants SMTP, aucune notification n'est envoyée.
+const MAIL = {
+  to: process.env.NOTIFY_EMAIL || '',
+  host: process.env.SMTP_HOST || '',
+  port: parseInt(process.env.SMTP_PORT || '587', 10),
+  implicitTls: process.env.SMTP_TLS === 'true',
+  user: process.env.SMTP_USER || '',
+  pass: process.env.SMTP_PASSWORD || '',
+  from: process.env.MAIL_FROM || process.env.NOTIFY_EMAIL || ''
+};
+const MAIL_TIMEOUT = 20 * 1000;
+
+function encodeHeader(text) {
+  return /^[\x20-\x7e]*$/.test(text) ? text : '=?UTF-8?B?' + Buffer.from(text, 'utf8').toString('base64') + '?=';
+}
+
+function sendMail(subject, text) {
+  return new Promise(function (resolve, reject) {
+    const body = Buffer.from(text, 'utf8').toString('base64').replace(/.{76}/g, '$&\r\n');
+    const message = [
+      'From: ' + MAIL.from,
+      'To: <' + MAIL.to + '>',
+      'Subject: ' + encodeHeader(subject),
+      'Date: ' + new Date().toUTCString(),
+      'Message-ID: <' + crypto.randomBytes(12).toString('hex') + '@' + (MAIL.from.split('@')[1] || 'localhost') + '>',
+      'MIME-Version: 1.0',
+      'Content-Type: text/plain; charset=utf-8',
+      'Content-Transfer-Encoding: base64',
+      '',
+      body,
+      '.'
+    ].join('\r\n');
+
+    // Chaque étape : commande envoyée, code de réponse attendu
+    const steps = [
+      [null, 220],
+      ['EHLO localhost', 250]
+    ].concat(MAIL.implicitTls ? [] : [
+      ['STARTTLS', 220],
+      ['EHLO localhost', 250]
+    ]).concat([
+      ['AUTH LOGIN', 334],
+      [Buffer.from(MAIL.user).toString('base64'), 334],
+      [Buffer.from(MAIL.pass).toString('base64'), 235],
+      ['MAIL FROM:<' + MAIL.from + '>', 250],
+      ['RCPT TO:<' + MAIL.to + '>', 250],
+      ['DATA', 354],
+      [message, 250],
+      ['QUIT', 221]
+    ]);
+    let step = 0;
+    let buffer = '';
+    let socket = null;
+
+    function onData(chunk) {
+      buffer += chunk.toString('utf8');
+      // Une réponse est complète à sa dernière ligne "code espace texte"
+      const lines = buffer.split('\r\n');
+      const last = lines.length >= 2 ? lines[lines.length - 2] : '';
+      if (!/^\d{3} /.test(last)) return;
+      buffer = '';
+      const code = parseInt(last.slice(0, 3), 10);
+      if (code !== steps[step][1]) {
+        socket.destroy();
+        return reject(new Error('SMTP ' + (steps[step][0] || 'greeting').split(' ')[0] + ' : ' + last));
+      }
+      const done = steps[step][0];
+      step++;
+      if (step >= steps.length) { socket.end(); return resolve(); }
+      if (done === 'STARTTLS') {
+        // Bascule de la connexion en TLS avant l'authentification
+        socket.removeListener('data', onData);
+        attach(tls.connect({ socket: socket, servername: MAIL.host }, function () {
+          socket.write(steps[step][0] + '\r\n');
+        }));
+        return;
+      }
+      socket.write(steps[step][0] + '\r\n');
+    }
+
+    function attach(s) {
+      socket = s;
+      socket.setTimeout(MAIL_TIMEOUT, function () { socket.destroy(new Error('SMTP timeout')); });
+      socket.on('data', onData);
+      socket.on('error', reject);
+      socket.on('close', function () { if (step < steps.length) reject(new Error('SMTP connexion fermée')); });
+    }
+
+    attach(MAIL.implicitTls
+      ? tls.connect({ host: MAIL.host, port: MAIL.port, servername: MAIL.host })
+      : net.connect({ host: MAIL.host, port: MAIL.port }));
+  });
+}
+
+function notifyNewAgent(user, ip) {
+  if (!MAIL.to || !MAIL.host || !MAIL.user || !MAIL.pass) {
+    return console.log('Mail de notification non configuré, pas d\'envoi');
+  }
+  const text = [
+    'A new agent synced with the server for the first time.',
+    '',
+    'Agent: ' + user,
+    'Date: ' + new Date().toISOString(),
+    'IP: ' + ip,
+    'Agents on the server: ' + countUsers()
+  ].join('\n');
+  sendMail('Simple Cloud Sync: new agent ' + user, text).then(function () {
+    console.log('Mail de notification envoyé : ' + user);
+  }, function (e) {
+    console.error('Échec de l\'envoi du mail de notification : ' + e.message);
+  });
+}
+
 // ---- Mots de passe ----
 
 function scrypt(password, salt, N) {
@@ -133,13 +253,14 @@ const verified = new Map();
 // Agents en cours de création (deux premières synchros simultanées)
 const creating = new Set();
 
-function createUser(user, password) {
+function createUser(user, password, ip) {
   const salt = crypto.randomBytes(16).toString('hex');
   return scrypt(password, salt, SCRYPT.N).then(function (key) {
     stores.set(user, { auth: { salt: salt, hash: key.toString('hex'), N: SCRYPT.N }, rev: 0, entries: Object.create(null) });
     save(user);
     verified.set(user, fastHash(user, password));
     console.log('Nouvel agent : ' + user);
+    notifyNewAgent(user, ip);
   });
 }
 
@@ -531,7 +652,7 @@ function handleSync(req, res, body) {
     if (creating.has(user)) return send(res, 409, { error: 'retry' });
     creating.add(user);
     ipCreations.add(ip);
-    auth = createUser(user, password)
+    auth = createUser(user, password, ip)
       .then(function () { creating.delete(user); return true; },
         function (e) { creating.delete(user); throw e; });
   } else if (verified.get(user) === fastHash(user, password)) {
