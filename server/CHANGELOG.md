@@ -1,5 +1,8 @@
 # Sync server changelog
 
+## 1.3.0 (2026-09-27)
+- NEW: The admin receives an email each time a new agent syncs with the server for the first time. Mail server, sender and recipient are set in the private `.env` file (see `.env.example`).
+
 ## 1.2.0 (2026-09-27)
 - NEW: Admin page at `/admin/`: lists every agent with their synced plugins and the size of each plugin's data, resets a forgotten agent password to a one-time generated password, and lets the admin change their own password.
 - NEW: The initial admin credentials come from a private `.env` file kept on the server (see `.env.example`).
