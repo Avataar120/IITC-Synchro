@@ -78,8 +78,10 @@ function wrapper(plugin_info) {
   // ==================== CONFIGURATION ====================
   // Sync server URL, without trailing slash
   self.ENDPOINT = 'https://iitcsimplesync.avataar120.com';
-  // Local change check (no network call when nothing changed)
-  self.LOCAL_CHECK_MS = 30 * 1000;
+  // Local change check (a local-only scan; no network call when nothing
+  // changed) -- kept short so a local edit reaches the server with no
+  // perceptible delay.
+  self.LOCAL_CHECK_MS = 2 * 1000;
   // Fetch changes made on other devices, only while the tab is visible
   self.REMOTE_PULL_MS = 2 * 60 * 1000;
   self.KEY_PREFIX = 'plugin-';
@@ -660,7 +662,11 @@ function wrapper(plugin_info) {
         // backgrounded) long enough for it to finish before the actual close.
         self.prepareBeacon();
         self.flushOnExit();
-      } else if (Date.now() - self.lastSync >= self.REMOTE_PULL_MS) self.syncNow();
+      } else {
+        // Always pull on regaining focus, not just every REMOTE_PULL_MS:
+        // coming back to the tab is exactly when stale data is most visible.
+        self.syncNow();
+      }
     });
     window.addEventListener('pagehide', self.flushOnExit);
 
