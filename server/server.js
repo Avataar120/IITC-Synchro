@@ -28,6 +28,7 @@ const MAX_FUTURE_MS = 24 * 60 * 60 * 1000; // un ts plus loin dans le futur est 
 // (voir wrappedKey ci-dessous). Le serveur n'accepte plus de client plus ancien.
 const PROTOCOL_VERSION = 2;
 const MAX_WRAPPED_KEY = 500;
+const MAX_AUTH_KEY = 128; // l'authKey dérivé par le client fait 64 caractères hex
 
 // Dérivation du jeton d'authentification à partir du mot de passe : doit
 // produire exactement le même résultat que le plugin (PBKDF2 puis HKDF, voir
@@ -77,7 +78,11 @@ function loadStore(user) {
   let store = null;
   try {
     const raw = JSON.parse(fs.readFileSync(userFile(user), 'utf8'));
-    store = { auth: raw.auth || null, rev: Number(raw.rev) || 0, entries: Object.assign(Object.create(null), raw.entries), wrappedKey: raw.wrappedKey || null };
+    store = {
+      auth: raw.auth || null, rev: Number(raw.rev) || 0,
+      entries: Object.assign(Object.create(null), raw.entries),
+      wrappedKey: raw.wrappedKey || null, mustChangePassword: !!raw.mustChangePassword
+    };
   } catch (e) {
     if (e.code !== 'ENOENT') throw e;
   }
@@ -523,7 +528,10 @@ function randomPassword() {
 // par l'agent dans le plugin sur chacun de ses appareils. L'ancienne clé de
 // données chiffrée est effacée : elle ne peut plus être déballée avec le
 // nouveau mot de passe, le premier appareil qui se resynchronise en pose une
-// nouvelle et republie ses valeurs locales avec elle.
+// nouvelle et republie ses valeurs locales avec elle. mustChangePassword
+// force ensuite le plugin à faire choisir un mot de passe définitif à
+// l'agent (voir newAuth dans handleSync) : pas de mot de passe temporaire
+// qui traîne indéfiniment.
 function resetAgentPassword(user) {
   const store = loadStore(user);
   if (!store) return Promise.resolve(null);
@@ -531,6 +539,7 @@ function resetAgentPassword(user) {
   return hashPassword(deriveAuthKey(user, password)).then(function (auth) {
     store.auth = auth;
     store.wrappedKey = null;
+    store.mustChangePassword = true;
     save(user);
     verified.delete(user);
     userFailures.reset(user);
@@ -712,9 +721,40 @@ function handleSync(req, res, body) {
 
   return auth.then(function (ok) {
     if (!ok) return send(res, 401, { error: 'unauthorized' });
-    const result = sync(user, stores.get(user), body);
-    if (!result) return send(res, 413, { error: 'quota exceeded' });
-    send(res, 200, result);
+    const store = stores.get(user);
+
+    // Agent qui définit son mot de passe définitif après un reset admin
+    // (mustChangePassword) : toujours authentifié avec l'ancien jeton
+    // ci-dessus, il fournit ici le nouveau et la clé de données réenveloppée
+    // avec. Remplace auth et wrappedKey ensemble ; c'est le seul endroit où
+    // un wrappedKey déjà posé peut être écrasé.
+    const changeAuth = body.newAuth && typeof body.newAuth === 'object'
+      ? Promise.resolve().then(function () {
+        const newAuthKey = String(body.newAuth.authKey || '');
+        const newWrappedKey = String(body.newAuth.wrappedKey || '');
+        if (!newAuthKey || newAuthKey.length > MAX_AUTH_KEY || !newWrappedKey || newWrappedKey.length > MAX_WRAPPED_KEY) {
+          throw Object.assign(new Error('invalid new credential'), { status: 400 });
+        }
+        return hashPassword(newAuthKey).then(function (authHash) {
+          store.auth = authHash;
+          store.wrappedKey = newWrappedKey;
+          store.mustChangePassword = false;
+          verified.delete(user);
+          save(user);
+          console.log('Mot de passe changé par l\'agent : ' + user);
+        });
+      })
+      : Promise.resolve();
+
+    return changeAuth.then(function () {
+      const result = sync(user, store, body);
+      if (!result) return send(res, 413, { error: 'quota exceeded' });
+      if (store.mustChangePassword) result.mustChangePassword = true;
+      send(res, 200, result);
+    }, function (e) {
+      if (e && e.status) return send(res, e.status, { error: e.message });
+      throw e;
+    });
   });
 }
 

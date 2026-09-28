@@ -511,7 +511,77 @@ function wrapper(plugin_info) {
         if (appliedCount > 0) {
           self.showStatus('Reload the page to apply everything.');
         }
+
+        // Set after an admin reset: the agent is in with the temporary
+        // password, but must now pick a permanent one -- there is no
+        // separate "change password" menu, this is the only way to set one.
+        if (res.mustChangePassword) self.forceNewPassword(user, keys);
       });
+  };
+
+  // Mandatory after an admin reset (server sent mustChangePassword: true).
+  // Re-shown on every sync until a new password is actually submitted.
+  self.forceNewPassword = function (user, keys) {
+    if (self.newPasswordDialogOpen) return;
+    self.newPasswordDialogOpen = true;
+    const errorEl = $('<p style="color:#f66">').text('');
+    const html = $('<div>')
+      .append($('<p>').text(
+        'Your sync password for agent ' + user + ' was reset by an admin. ' +
+        'Choose a new, permanent password now (at least ' + self.MIN_PASSWORD_LENGTH + ' characters).'
+      ))
+      .append(errorEl)
+      .append('<input type="password" id="simpleCloudSyncNewPassword" style="width:95%" autocomplete="new-password">');
+    window.dialog({
+      html: html,
+      title: 'Simple Cloud Sync - set a new password',
+      id: 'simpleCloudSyncNewPassword-dialog',
+      buttons: {
+        'OK': function () {
+          const pw = $('#simpleCloudSyncNewPassword').val();
+          if (!pw || pw.length < self.MIN_PASSWORD_LENGTH) {
+            errorEl.text('The password must be at least ' + self.MIN_PASSWORD_LENGTH + ' characters long.').show();
+            return;
+          }
+          const dialogEl = this;
+          self.submitNewPassword(user, keys, pw).then(function () {
+            $(dialogEl).dialog('close');
+          }, function (err) {
+            errorEl.text('Error: ' + err.message).show();
+          });
+        }
+      },
+      closeCallback: function () { self.newPasswordDialogOpen = false; }
+    });
+  };
+
+  // Re-wraps the (already unwrapped) data key with a key derived from the new
+  // password, and asks the server to adopt both the new auth and the new
+  // wrapped key together, still authenticated with the current (temporary)
+  // one. No data is re-encrypted: the data key itself does not change.
+  self.submitNewPassword = function (user, keys, newPassword) {
+    return self.deriveKeys(user, newPassword).then(function (newDerived) {
+      return self.wrapDataKey(keys.dataKey, newDerived.wrapKey).then(function (newWrappedKey) {
+        const body = {
+          v: self.PROTOCOL_VERSION, user: user, since: 0, entries: {},
+          newAuth: { authKey: newDerived.authKey, wrappedKey: newWrappedKey }
+        };
+        return fetch(self.ENDPOINT + '/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + keys.authKey },
+          body: JSON.stringify(body)
+        }).then(self.parseSyncResponse).then(function (res) {
+          localStorage.setItem(self.PASSWORD_KEY, newPassword);
+          keys.password = newPassword;
+          keys.authKey = newDerived.authKey;
+          keys.wrapKey = newDerived.wrapKey;
+          localStorage.setItem(self.STATE_KEY, JSON.stringify({
+            endpoint: self.ENDPOINT, user: user, rev: res.rev, wrappedKey: res.wrappedKey || newWrappedKey
+          }));
+          self.showStatus('New sync password set.');
+        });
+      });
+    });
   };
 
   self.hasLocalChanges = function () {
