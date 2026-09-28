@@ -1,5 +1,8 @@
 # Sync server changelog
 
+## 1.5.0 (2026-09-28)
+- NEW: After an admin reset, the agent's next successful sync with the temporary password is followed by a mandatory permanent password change; the temporary password stops working as soon as it is set.
+
 ## 1.4.0 (2026-09-28)
 - NEW: Synced data is end-to-end encrypted by the plugin before it reaches the server: the server and its administrator can no longer read agents' data, only see its size. Requires plugin version 2.0.0 or later; older versions are rejected with a clear "update required" error.
 
