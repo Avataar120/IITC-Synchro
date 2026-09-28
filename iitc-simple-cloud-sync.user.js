@@ -414,6 +414,8 @@ function wrapper(plugin_info) {
   };
 
   self.lastSync = 0;
+  // Cleared after this page's first sync result is applied (see applySyncResult).
+  self.initialSyncPending = true;
 
   self.syncNow = function (manual) {
     const user = self.getUser();
@@ -494,6 +496,15 @@ function wrapper(plugin_info) {
   };
 
   self.applySyncResult = function (keys, user, meta, sentPlain, res) {
+    // Other IITC plugins read localStorage synchronously at their own boot,
+    // before this plugin's network round trip can possibly have finished --
+    // so on the page's very first sync, fresh data written here still shows
+    // stale until the page reloads (self-triggered below). Only ever done
+    // for this first sync: reloading mid-session would interrupt whatever
+    // the agent is doing (an open dialog, an unsaved drawing...).
+    const isInitialSync = self.initialSyncPending;
+    self.initialSyncPending = false;
+
     // The data key (new or just-confirmed) is now adopted by the server:
     // later syncs this session go back to sending only what actually changed.
     keys.migrate = false;
@@ -527,6 +538,11 @@ function wrapper(plugin_info) {
           appliedCount + ' received from the cloud.'
         );
         if (appliedCount > 0) {
+          if (isInitialSync) {
+            self.showStatus('New data received, reloading the page...');
+            location.reload();
+            return;
+          }
           self.showStatus('Reload the page to apply everything.');
         }
 
