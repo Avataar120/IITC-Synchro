@@ -24,6 +24,25 @@ const MAX_KEY_LENGTH = 256;
 const MAX_USERS = 200;
 const MAX_FUTURE_MS = 24 * 60 * 60 * 1000; // un ts plus loin dans le futur est ramené à maintenant
 
+// Protocole de synchro : v2 chiffre les valeurs de bout en bout côté client
+// (voir wrappedKey ci-dessous). Le serveur n'accepte plus de client plus ancien.
+const PROTOCOL_VERSION = 2;
+const MAX_WRAPPED_KEY = 500;
+
+// Dérivation du jeton d'authentification à partir du mot de passe : doit
+// produire exactement le même résultat que le plugin (PBKDF2 puis HKDF, voir
+// deriveKeys côté client). Normalement le serveur ne voit jamais le mot de
+// passe brut, seulement ce jeton déjà dérivé ; seule exception : un mot de
+// passe temporaire généré par l'admin (resetAgentPassword), que le serveur
+// doit pouvoir re-dériver lui-même pour le hacher comme le fera le client.
+const AUTH_PBKDF2_ITERATIONS = 600000;
+const AUTH_HKDF_INFO = 'scs-auth-v1';
+
+function deriveAuthKey(user, password) {
+  const master = crypto.pbkdf2Sync(password, Buffer.from(user, 'utf8'), AUTH_PBKDF2_ITERATIONS, 32, 'sha256');
+  return Buffer.from(crypto.hkdfSync('sha256', master, Buffer.alloc(0), Buffer.from(AUTH_HKDF_INFO, 'utf8'), 32)).toString('hex');
+}
+
 // Mots de passe : longueur mini à la création d'un agent, scrypt N=2^15 r=8 p=1
 const MIN_NEW_PASSWORD = 8;
 const MAX_PASSWORD = 200;
@@ -58,7 +77,7 @@ function loadStore(user) {
   let store = null;
   try {
     const raw = JSON.parse(fs.readFileSync(userFile(user), 'utf8'));
-    store = { auth: raw.auth || null, rev: Number(raw.rev) || 0, entries: Object.assign(Object.create(null), raw.entries) };
+    store = { auth: raw.auth || null, rev: Number(raw.rev) || 0, entries: Object.assign(Object.create(null), raw.entries), wrappedKey: raw.wrappedKey || null };
   } catch (e) {
     if (e.code !== 'ENOENT') throw e;
   }
@@ -253,10 +272,10 @@ const verified = new Map();
 // Agents en cours de création (deux premières synchros simultanées)
 const creating = new Set();
 
-function createUser(user, password, ip) {
+function createUser(user, password, ip, wrappedKey) {
   const salt = crypto.randomBytes(16).toString('hex');
   return scrypt(password, salt, SCRYPT.N).then(function (key) {
-    stores.set(user, { auth: { salt: salt, hash: key.toString('hex'), N: SCRYPT.N }, rev: 0, entries: Object.create(null) });
+    stores.set(user, { auth: { salt: salt, hash: key.toString('hex'), N: SCRYPT.N }, rev: 0, entries: Object.create(null), wrappedKey: wrappedKey });
     save(user);
     verified.set(user, fastHash(user, password));
     console.log('Nouvel agent : ' + user);
@@ -303,6 +322,18 @@ function sync(user, store, body) {
   const updates = [];
   const rejected = [];
 
+  // La clé de données chiffrée (opaque pour le serveur) : un appareil authentifié
+  // peut la poser tant qu'aucune n'existe déjà (première migration vers le
+  // chiffrement, ou après un reset admin qui l'a effacée). Une fois posée, elle
+  // n'est plus jamais écrasée ici, pour qu'un nouvel appareil ne puisse pas
+  // remplacer par erreur la clé déjà utilisée par les autres.
+  let wrappedKeyChanged = false;
+  if (!store.wrappedKey && typeof body.wrappedKey === 'string' && body.wrappedKey &&
+    body.wrappedKey.length <= MAX_WRAPPED_KEY) {
+    store.wrappedKey = body.wrappedKey;
+    wrappedKeyChanged = true;
+  }
+
   Object.keys(incoming).forEach(function (k) {
     const e = incoming[k];
     if (k.length > MAX_KEY_LENGTH || !e || typeof e.value !== 'string') return;
@@ -335,7 +366,7 @@ function sync(user, store, body) {
     store.entries[u.key] = { value: u.value, ts: u.ts, rev: store.rev };
     changed = true;
   });
-  if (changed) save(user);
+  if (changed || wrappedKeyChanged) save(user);
 
   const out = Object.create(null);
   Object.keys(store.entries).forEach(function (k) {
@@ -347,7 +378,7 @@ function sync(user, store, body) {
     out[k] = { value: e.value, ts: e.ts };
   });
 
-  return { rev: store.rev, entries: out };
+  return { rev: store.rev, entries: out, wrappedKey: store.wrappedKey };
 }
 
 // ---- Administration ----
@@ -489,13 +520,17 @@ function randomPassword() {
 }
 
 // Remplace le mot de passe d'un agent par un mot de passe temporaire, à saisir
-// par l'agent dans le plugin sur chacun de ses appareils.
+// par l'agent dans le plugin sur chacun de ses appareils. L'ancienne clé de
+// données chiffrée est effacée : elle ne peut plus être déballée avec le
+// nouveau mot de passe, le premier appareil qui se resynchronise en pose une
+// nouvelle et republie ses valeurs locales avec elle.
 function resetAgentPassword(user) {
   const store = loadStore(user);
   if (!store) return Promise.resolve(null);
   const password = randomPassword();
-  return hashPassword(password).then(function (auth) {
+  return hashPassword(deriveAuthKey(user, password)).then(function (auth) {
     store.auth = auth;
+    store.wrappedKey = null;
     save(user);
     verified.delete(user);
     userFailures.reset(user);
@@ -632,6 +667,7 @@ function readBody(req, res, handler) {
 
 // Traitement d'une requête /sync authentifiée ou créant l'agent
 function handleSync(req, res, body) {
+  if (body.v !== PROTOCOL_VERSION) return send(res, 426, { error: 'upgrade required' });
   const ip = clientIp(req);
   const user = String(body.user || '').toLowerCase();
   if (!USER_RE.test(user)) return send(res, 400, { error: 'invalid user' });
@@ -646,13 +682,16 @@ function handleSync(req, res, body) {
 
   if (!store) {
     if (password.length < MIN_NEW_PASSWORD) return send(res, 400, { error: 'weak password', min: MIN_NEW_PASSWORD });
+    if (typeof body.wrappedKey !== 'string' || !body.wrappedKey || body.wrappedKey.length > MAX_WRAPPED_KEY) {
+      return send(res, 400, { error: 'missing wrapped key' });
+    }
     if (ipCreations.count(ip) >= MAX_CREATIONS_PER_IP || countUsers() >= MAX_USERS) {
       return send(res, 429, { error: 'too many accounts' });
     }
     if (creating.has(user)) return send(res, 409, { error: 'retry' });
     creating.add(user);
     ipCreations.add(ip);
-    auth = createUser(user, password, ip)
+    auth = createUser(user, password, ip, body.wrappedKey)
       .then(function () { creating.delete(user); return true; },
         function (e) { creating.delete(user); throw e; });
   } else if (verified.get(user) === fastHash(user, password)) {
