@@ -3,7 +3,7 @@
 // @id              simplecloudsync@avataar120
 // @name            Simple Cloud Sync
 // @category        Misc
-// @version         2.1.1.20260928
+// @version         2.1.2.20260928
 // @description     Syncs the localStorage data of your IITC plugins (bookmarks, draw tools, settings…) across all your devices. Each agent has a private, password-protected, end-to-end encrypted space on the sync server, keyed by the logged-in agent name. Per-key merge, most recent change wins; the server is only contacted when something changed.
 // @downloadURL     https://github.com/Avataar120/IITC-Synchro/raw/main/iitc-simple-cloud-sync.user.js
 // @updateURL       https://github.com/Avataar120/IITC-Synchro/raw/main/iitc-simple-cloud-sync.meta.js
@@ -21,10 +21,16 @@
 function wrapper(plugin_info) {
   if (typeof window.plugin !== 'function') window.plugin = function () {};
   plugin_info.buildName = 'main';
-  plugin_info.dateTimeVersion = '2026-09-28-190000';
+  plugin_info.dateTimeVersion = '2026-09-28-200000';
   plugin_info.pluginId = 'simpleCloudSync';
 
   const changelog = [{
+    version: '2.1.2',
+    changes: [
+      'FIX: Local changes now reach the server almost immediately instead of within 30 seconds.',
+      'FIX: Coming back to the tab always checks for changes made elsewhere, not just every 2 minutes.',
+    ],
+  }, {
     version: '2.1.1',
     changes: [
       'FIX: Changes made on another device now show up within 2 minutes instead of up to 10.',
