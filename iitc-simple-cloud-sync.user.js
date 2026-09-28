@@ -76,7 +76,7 @@ function wrapper(plugin_info) {
   // Local change check (no network call when nothing changed)
   self.LOCAL_CHECK_MS = 30 * 1000;
   // Fetch changes made on other devices, only while the tab is visible
-  self.REMOTE_PULL_MS = 10 * 60 * 1000;
+  self.REMOTE_PULL_MS = 2 * 60 * 1000;
   self.KEY_PREFIX = 'plugin-';
   // Set to true to show the status box on the map (mobile troubleshooting)
   self.DEBUG = false;
@@ -655,7 +655,7 @@ function wrapper(plugin_info) {
         // backgrounded) long enough for it to finish before the actual close.
         self.prepareBeacon();
         self.flushOnExit();
-      } else if (Date.now() - self.lastSync >= 2 * 60 * 1000) self.syncNow();
+      } else if (Date.now() - self.lastSync >= self.REMOTE_PULL_MS) self.syncNow();
     });
     window.addEventListener('pagehide', self.flushOnExit);
 
