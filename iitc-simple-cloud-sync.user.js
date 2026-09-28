@@ -21,7 +21,7 @@
 function wrapper(plugin_info) {
   if (typeof window.plugin !== 'function') window.plugin = function () {};
   plugin_info.buildName = 'main';
-  plugin_info.dateTimeVersion = '2026-09-28-120000';
+  plugin_info.dateTimeVersion = '2026-09-28-150000';
   plugin_info.pluginId = 'simpleCloudSync';
 
   const changelog = [{
@@ -130,9 +130,14 @@ function wrapper(plugin_info) {
     localStorage.setItem(self.META_KEY, JSON.stringify(meta));
   };
 
-  // Logged-in agent name: each agent has its own space on the server
+  // Logged-in agent name: each agent has its own space on the server.
+  // Lower-cased here, once, so it is byte-for-byte identical to what the
+  // server uses (it always lower-cases the agent name it receives) -- the
+  // name also salts the password derivation below, so any mismatch there
+  // would silently derive the wrong key and never authenticate.
   self.getUser = function () {
-    return (window.PLAYER && window.PLAYER.nickname) || null;
+    const nickname = window.PLAYER && window.PLAYER.nickname;
+    return nickname ? nickname.toLowerCase() : null;
   };
 
   self.getState = function () {
