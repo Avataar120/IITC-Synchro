@@ -3,7 +3,7 @@
 // @id              simplecloudsync@avataar120
 // @name            Simple Cloud Sync
 // @category        Misc
-// @version         2.2.1.20260929
+// @version         2.2.0.20260929
 // @description     Syncs the localStorage data of your IITC plugins (bookmarks, draw tools, settings…) across all your devices. Each agent has a private, password-protected, end-to-end encrypted space on the sync server, keyed by the logged-in agent name. Per-key merge, most recent change wins; the server is only contacted when something changed.
 // @downloadURL     https://github.com/Avataar120/IITC-Synchro/raw/main/iitc-simple-cloud-sync.user.js
 // @updateURL       https://github.com/Avataar120/IITC-Synchro/raw/main/iitc-simple-cloud-sync.meta.js
@@ -21,15 +21,10 @@
 function wrapper(plugin_info) {
   if (typeof window.plugin !== 'function') window.plugin = function () {};
   plugin_info.buildName = 'main';
-  plugin_info.dateTimeVersion = '2026-09-29-100000';
+  plugin_info.dateTimeVersion = '2026-09-29-090000';
   plugin_info.pluginId = 'simpleCloudSync';
 
   const changelog = [{
-    version: '2.2.1',
-    changes: [
-      'DEBUG: A red triangle appears top-left (and stays until reload) when a Draw Tools update is received from the server, to help diagnose the reload-free refresh (temporary, will be removed).',
-    ],
-  }, {
     version: '2.2.0',
     changes: [
       'NEW: Drawn items and key counts synced from another device now show up instantly, without any page reload.',
