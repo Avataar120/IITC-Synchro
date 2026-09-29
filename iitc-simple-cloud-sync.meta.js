@@ -3,7 +3,7 @@
 // @id              simplecloudsync@avataar120
 // @name            Simple Cloud Sync
 // @category        Misc
-// @version         2.2.0.20260929
+// @version         2.2.1.20260929
 // @description     Syncs the localStorage data of your IITC plugins (bookmarks, draw tools, settings…) across all your devices. Each agent has a private, password-protected, end-to-end encrypted space on the sync server, keyed by the logged-in agent name. Per-key merge, most recent change wins; the server is only contacted when something changed.
 // @downloadURL     https://github.com/Avataar120/IITC-Synchro/raw/main/iitc-simple-cloud-sync.user.js
 // @updateURL       https://github.com/Avataar120/IITC-Synchro/raw/main/iitc-simple-cloud-sync.meta.js

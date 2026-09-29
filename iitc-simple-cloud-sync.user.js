@@ -3,7 +3,7 @@
 // @id              simplecloudsync@avataar120
 // @name            Simple Cloud Sync
 // @category        Misc
-// @version         2.2.0.20260929
+// @version         2.2.1.20260929
 // @description     Syncs the localStorage data of your IITC plugins (bookmarks, draw tools, settings…) across all your devices. Each agent has a private, password-protected, end-to-end encrypted space on the sync server, keyed by the logged-in agent name. Per-key merge, most recent change wins; the server is only contacted when something changed.
 // @downloadURL     https://github.com/Avataar120/IITC-Synchro/raw/main/iitc-simple-cloud-sync.user.js
 // @updateURL       https://github.com/Avataar120/IITC-Synchro/raw/main/iitc-simple-cloud-sync.meta.js
@@ -21,10 +21,15 @@
 function wrapper(plugin_info) {
   if (typeof window.plugin !== 'function') window.plugin = function () {};
   plugin_info.buildName = 'main';
-  plugin_info.dateTimeVersion = '2026-09-29-090000';
+  plugin_info.dateTimeVersion = '2026-09-29-100000';
   plugin_info.pluginId = 'simpleCloudSync';
 
   const changelog = [{
+    version: '2.2.1',
+    changes: [
+      'DEBUG: A red triangle appears top-left (and stays until reload) when a Draw Tools update is received from the server, to help diagnose the reload-free refresh (temporary, will be removed).',
+    ],
+  }, {
     version: '2.2.0',
     changes: [
       'NEW: Drawn items and key counts synced from another device now show up instantly, without any page reload.',
@@ -147,6 +152,27 @@ function wrapper(plugin_info) {
       }
       const time = new Date().toLocaleTimeString();
       el.textContent = '[Sync ' + time + '] ' + msg;
+    } catch (e) { /* ignore */ }
+  };
+
+  // TEMP DEBUG (2.2.x): red triangle, top-left, shown once a server update
+  // touching Draw Tools is received and never removed until IITC reloads --
+  // on purpose, so a missed refresh isn't mistaken for a missed update.
+  // Remove this once the reload-free refresh is confirmed working.
+  self.showDebugMarker = function () {
+    try {
+      if (document.getElementById('simpleCloudSyncDebugMarker')) return;
+      const el = document.createElement('div');
+      el.id = 'simpleCloudSyncDebugMarker';
+      el.title = 'Simple Cloud Sync: a Draw Tools update was received from the server';
+      el.style.cssText = [
+        'position:fixed', 'top:0', 'left:0', 'z-index:999999',
+        'width:0', 'height:0',
+        'border-style:solid', 'border-width:32px 32px 0 0',
+        'border-color:#e00 transparent transparent transparent',
+        'pointer-events:none'
+      ].join(';');
+      (document.body || document.documentElement).appendChild(el);
     } catch (e) { /* ignore */ }
   };
 
@@ -578,6 +604,12 @@ function wrapper(plugin_info) {
           }
           meta[k] = { value: value, ts: res.entries[k].ts };
         });
+
+        // TEMP DEBUG: confirms a server update touching Draw Tools was
+        // actually received, separately from whether clearAndDraw() then
+        // visibly redraws it. Stays up until IITC is reloaded. Remove once
+        // the reload-free refresh is confirmed working end to end.
+        if (appliedKeys.indexOf('plugin-draw-tools-layer') !== -1) self.showDebugMarker();
 
         self.setMeta(meta);
         localStorage.setItem(self.STATE_KEY, JSON.stringify({
