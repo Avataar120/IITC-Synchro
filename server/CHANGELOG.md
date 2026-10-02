@@ -1,5 +1,8 @@
 # Sync server changelog
 
+## 1.6.0 (2026-10-02)
+- NEW: Admin sessions now last 30 days and survive closing the browser, instead of expiring after 8 hours or when the browser is closed.
+
 ## 1.5.0 (2026-09-28)
 - NEW: After an admin reset, the agent's next successful sync with the temporary password is followed by a mandatory permanent password change; the temporary password stops working as soon as it is set.
 
