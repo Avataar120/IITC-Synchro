@@ -392,7 +392,7 @@ function sync(user, store, body) {
 // Créé au premier démarrage à partir de ADMIN_USER / ADMIN_PASSWORD (fichier .env non versionné),
 // puis modifiable depuis la page admin. Sans ces variables ni compte existant, la page admin est désactivée.
 const DEFAULT_ADMIN = { user: process.env.ADMIN_USER || '', password: process.env.ADMIN_PASSWORD || '' };
-const SESSION_TTL = 8 * 60 * 60 * 1000;
+const SESSION_TTL = 30 * 24 * 60 * 60 * 1000;
 const RESET_PASSWORD_LENGTH = 12;
 const RESET_ALPHABET = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
