@@ -1,5 +1,8 @@
 # Sync server changelog
 
+## 1.7.0 (2026-10-02)
+- NEW: The admin page now lists agents from the most recently updated to the least recently updated.
+
 ## 1.6.0 (2026-10-02)
 - NEW: Admin sessions now last 30 days and survive closing the browser, instead of expiring after 8 hours or when the browser is closed.
 
