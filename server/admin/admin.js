@@ -205,7 +205,8 @@
     const box = $('agents');
     box.textContent = '';
     let shown = 0;
-    data.agents.forEach(function (a) {
+    const agents = data.agents.slice().sort(function (a, b) { return b.lastChange - a.lastChange; });
+    agents.forEach(function (a) {
       const card = renderAgent(a, data.limits, filter);
       if (card) { box.appendChild(card); shown++; }
     });
