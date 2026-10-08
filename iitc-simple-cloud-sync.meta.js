@@ -3,7 +3,7 @@
 // @id              simplecloudsync@avataar120
 // @name            Simple Cloud Sync
 // @category        Misc
-// @version         2.3.0.20261008
+// @version         2.4.0.20261008
 // @description     One agent, many devices. Simple Cloud Sync keeps all your IITC plugins' data -- bookmarks, drawings, settings -- perfectly in sync across your PC, phones and tablets, fully end-to-end encrypted.
 // @downloadURL     https://github.com/Avataar120/IITC-Synchro/raw/main/iitc-simple-cloud-sync.user.js
 // @updateURL       https://github.com/Avataar120/IITC-Synchro/raw/main/iitc-simple-cloud-sync.meta.js

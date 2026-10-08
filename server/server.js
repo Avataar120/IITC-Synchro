@@ -30,6 +30,11 @@ const PROTOCOL_VERSION = 2;
 const MAX_WRAPPED_KEY = 500;
 const MAX_AUTH_KEY = 128; // l'authKey dérivé par le client fait 64 caractères hex
 
+// Faction de l'agent (Resistance/Enlightened) : seule donnée envoyée en clair
+// en dehors de wrappedKey, pour que la page admin puisse l'afficher.
+const FACTIONS = ['RESISTANCE', 'ENLIGHTENED'];
+function validFaction(f) { return FACTIONS.indexOf(f) === -1 ? null : f; }
+
 // Dérivation du jeton d'authentification à partir du mot de passe : doit
 // produire exactement le même résultat que le plugin (PBKDF2 puis HKDF, voir
 // deriveKeys côté client). Normalement le serveur ne voit jamais le mot de
@@ -277,10 +282,13 @@ const verified = new Map();
 // Agents en cours de création (deux premières synchros simultanées)
 const creating = new Set();
 
-function createUser(user, password, ip, wrappedKey) {
+function createUser(user, password, ip, wrappedKey, faction) {
   const salt = crypto.randomBytes(16).toString('hex');
   return scrypt(password, salt, SCRYPT.N).then(function (key) {
-    stores.set(user, { auth: { salt: salt, hash: key.toString('hex'), N: SCRYPT.N }, rev: 0, entries: Object.create(null), wrappedKey: wrappedKey });
+    stores.set(user, {
+      auth: { salt: salt, hash: key.toString('hex'), N: SCRYPT.N }, rev: 0, entries: Object.create(null),
+      wrappedKey: wrappedKey, faction: faction, createdAt: Date.now()
+    });
     save(user);
     verified.set(user, fastHash(user, password));
     console.log('Nouvel agent : ' + user);
@@ -339,6 +347,16 @@ function sync(user, store, body) {
     wrappedKeyChanged = true;
   }
 
+  // Faction : jamais chiffrée (voir FACTIONS ci-dessus), mise à jour à chaque
+  // synchro où le client la fournit -- en pratique elle ne change jamais, mais
+  // rien n'empêche de la renvoyer pour se corriger si elle manquait encore.
+  let factionChanged = false;
+  const faction = validFaction(body.faction);
+  if (faction && store.faction !== faction) {
+    store.faction = faction;
+    factionChanged = true;
+  }
+
   Object.keys(incoming).forEach(function (k) {
     const e = incoming[k];
     if (k.length > MAX_KEY_LENGTH || !e || typeof e.value !== 'string') return;
@@ -371,7 +389,7 @@ function sync(user, store, body) {
     store.entries[u.key] = { value: u.value, ts: u.ts, rev: store.rev };
     changed = true;
   });
-  if (changed || wrappedKeyChanged) save(user);
+  if (changed || wrappedKeyChanged || factionChanged) save(user);
 
   const out = Object.create(null);
   Object.keys(store.entries).forEach(function (k) {
@@ -499,6 +517,8 @@ function agentSummary(user, store) {
     size: total,
     keyCount: Object.keys(store.entries).length,
     lastChange: lastChange,
+    faction: store.faction || null,
+    createdAt: store.createdAt || null,
     plugins: list
   };
 }
@@ -700,7 +720,7 @@ function handleSync(req, res, body) {
     if (creating.has(user)) return send(res, 409, { error: 'retry' });
     creating.add(user);
     ipCreations.add(ip);
-    auth = createUser(user, password, ip, body.wrappedKey)
+    auth = createUser(user, password, ip, body.wrappedKey, validFaction(body.faction))
       .then(function () { creating.delete(user); return true; },
         function (e) { creating.delete(user); throw e; });
   } else if (verified.get(user) === fastHash(user, password)) {
