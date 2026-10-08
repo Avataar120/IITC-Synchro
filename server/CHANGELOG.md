@@ -1,5 +1,8 @@
 # Sync server changelog
 
+## 1.8.0 (2026-10-08)
+- NEW: Each agent's synced data can now grow up to 4 MB, up from 2 MB.
+
 ## 1.7.0 (2026-10-02)
 - NEW: The admin page now lists agents from the most recently updated to the least recently updated.
 
