@@ -3,7 +3,7 @@
 // @id              simplecloudsync@avataar120
 // @name            Simple Cloud Sync
 // @category        Misc
-// @version         2.3.0.20261008
+// @version         2.4.0.20261008
 // @description     One agent, many devices. Simple Cloud Sync keeps all your IITC plugins' data -- bookmarks, drawings, settings -- perfectly in sync across your PC, phones and tablets, fully end-to-end encrypted.
 // @downloadURL     https://github.com/Avataar120/IITC-Synchro/raw/main/iitc-simple-cloud-sync.user.js
 // @updateURL       https://github.com/Avataar120/IITC-Synchro/raw/main/iitc-simple-cloud-sync.meta.js
@@ -21,10 +21,15 @@
 function wrapper(plugin_info) {
   if (typeof window.plugin !== 'function') window.plugin = function () {};
   plugin_info.buildName = 'main';
-  plugin_info.dateTimeVersion = '2026-10-08-090000';
+  plugin_info.dateTimeVersion = '2026-10-08-153000';
   plugin_info.pluginId = 'simpleCloudSync';
 
   const changelog = [{
+    version: '2.4.0',
+    changes: [
+      'NEW: Your faction (Resistance/Enlightened) is now sent to the sync server in clear text, so the admin page can show it; everything else stays fully end-to-end encrypted.',
+    ],
+  }, {
     version: '2.3.0',
     changes: [
       'IMPROVE: Simplified the plugin description to focus on the multi-device sync pitch.',
