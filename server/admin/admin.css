@@ -9,6 +9,8 @@
   --accent-text: #ffffff;
   --bar: #0b8f7a;
   --bar-track: #e3e8ed;
+  --enl: #2ecc71;
+  --res: #3b8ee0;
   --warn-bg: #fff4d6;
   --warn-text: #6b4e00;
   --danger: #c0392b;
@@ -28,6 +30,8 @@
     --accent-text: #06231e;
     --bar: #20c1a4;
     --bar-track: #26313d;
+    --enl: #48e08a;
+    --res: #5aa7ec;
     --warn-bg: #3a2f10;
     --warn-text: #f3d27a;
     --danger: #ef6b5b;
@@ -133,6 +137,71 @@ button:disabled { opacity: .6; cursor: default; }
 }
 .stat .label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
 .stat .value { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.card + .card { margin-top: 16px; margin-bottom: 16px; }
+
+.history-chart {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.history-axis {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-end;
+  height: 140px;
+  padding-bottom: 1px;
+}
+.history-axis-tick { font-size: 11px; color: var(--muted); line-height: 1; white-space: nowrap; }
+.history {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 140px;
+  background-image: repeating-linear-gradient(to top, var(--border) 0, var(--border) 1px, transparent 1px, transparent 50%);
+}
+.history-bar {
+  flex: 1;
+  min-width: 2px;
+  background: var(--bar);
+  border-radius: 2px 2px 0 0;
+  position: relative;
+}
+.history-bar:hover { opacity: .8; }
+.history-empty { color: var(--muted); }
+
+.breakdown-row {
+  display: grid;
+  grid-template-columns: 110px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  font-variant-numeric: tabular-nums;
+}
+.breakdown-row .bar-track { background: var(--bar-track); border-radius: 4px; height: 8px; overflow: hidden; }
+.breakdown-row .bar-fill { height: 100%; background: var(--bar); }
+.breakdown-row.enl .bar-fill { background: var(--enl); }
+.breakdown-row.res .bar-fill { background: var(--res); }
+
+.agent-faction {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.agent-faction::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+.agent-faction.enl::before { background: var(--enl); }
+.agent-faction.res::before { background: var(--res); }
 
 .toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
 .toolbar input { margin: 0; flex: 1; }

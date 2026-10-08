@@ -63,6 +63,10 @@
     return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
   }
 
+  function formatDay(day) {
+    return new Date(day + 'T00:00:00Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
   function el(tag, cls, text) {
     const e = document.createElement(tag);
     if (cls) e.className = cls;
@@ -139,6 +143,82 @@
     });
   }
 
+  // Shared renderer for day bars: a row of bars scaled to their own max, with
+  // a left-hand axis showing 3 ticks (max, max/2, 0) lined up with the gridlines.
+  function renderBarChart(boxId, axisId, byDay, valueOf, formatValue, titleOf) {
+    const box = $(boxId);
+    const axis = $(axisId);
+    box.textContent = '';
+    axis.textContent = '';
+    if (!byDay.length) { box.appendChild(el('p', 'history-empty', 'No data yet.')); return; }
+    const max = byDay.reduce(function (m, d) { return Math.max(m, valueOf(d)); }, 0) || 1;
+    [max, max / 2, 0].forEach(function (v) {
+      axis.appendChild(el('div', 'history-axis-tick', formatValue(v)));
+    });
+    byDay.forEach(function (d) {
+      const bar = el('div', 'history-bar');
+      bar.style.height = Math.max(2, (valueOf(d) / max) * 100) + '%';
+      bar.title = titleOf(d);
+      box.appendChild(bar);
+    });
+  }
+
+  // Cumulative agent count per day, from each agent's creation date. Agents
+  // created before this chart existed have no creation date and are left out.
+  function registeredByDay(agents) {
+    const dayKey = function (ts) { return new Date(ts).toISOString().slice(0, 10); };
+    const counts = Object.create(null);
+    agents.forEach(function (a) { if (a.createdAt) counts[dayKey(a.createdAt)] = (counts[dayKey(a.createdAt)] || 0) + 1; });
+    const days = Object.keys(counts).sort();
+    if (!days.length) return [];
+    const dayMs = 24 * 60 * 60 * 1000;
+    const first = new Date(days[0] + 'T00:00:00Z').getTime();
+    const today = new Date(dayKey(Date.now()) + 'T00:00:00Z').getTime();
+    const out = [];
+    let total = 0;
+    for (let t = first; t <= today; t += dayMs) {
+      const k = dayKey(t);
+      total += counts[k] || 0;
+      out.push({ date: k, registeredTotal: total });
+    }
+    return out;
+  }
+
+  function renderRegistered(agents) {
+    renderBarChart('registered', 'registeredAxis', registeredByDay(agents),
+      function (d) { return d.registeredTotal; },
+      function (v) { return String(Math.round(v)); },
+      function (d) { return formatDay(d.date) + ' : ' + d.registeredTotal + ' agent(s)'; });
+  }
+
+  function renderBreakdown(containerId, rows, labelFor, cls) {
+    const box = $(containerId);
+    box.textContent = '';
+    const max = rows.reduce(function (m, r) { return Math.max(m, r.count); }, 0) || 1;
+    if (!rows.some(function (r) { return r.count > 0; })) { box.appendChild(el('p', 'muted', 'No data yet.')); return; }
+    rows.forEach(function (r) {
+      const row = el('div', 'breakdown-row' + (cls ? ' ' + cls(r) : ''));
+      row.appendChild(el('div', null, labelFor(r)));
+      const track = el('div', 'bar-track');
+      const fill = el('div', 'bar-fill');
+      fill.style.width = Math.max(2, (r.count / max) * 100) + '%';
+      track.appendChild(fill);
+      row.appendChild(track);
+      row.appendChild(el('div', 'muted', String(r.count) + ' agent' + (r.count === 1 ? '' : 's')));
+      box.appendChild(row);
+    });
+  }
+
+  function renderFactions(agents) {
+    let enl = 0, res = 0;
+    agents.forEach(function (a) {
+      if (a.faction === 'ENLIGHTENED') enl++; else if (a.faction === 'RESISTANCE') res++;
+    });
+    renderBreakdown('byFaction', [{ faction: 'ENLIGHTENED', count: enl }, { faction: 'RESISTANCE', count: res }],
+      function (r) { return r.faction === 'ENLIGHTENED' ? 'Enlightened' : 'Resistance'; },
+      function (r) { return r.faction === 'ENLIGHTENED' ? 'enl' : 'res'; });
+  }
+
   function renderAgent(a, limits, filter) {
     const matchAgent = !filter || a.user.indexOf(filter) !== -1;
     const plugins = matchAgent ? a.plugins : a.plugins.filter(function (p) {
@@ -152,7 +232,13 @@
     const summary = el('div', 'summary');
     summary.tabIndex = 0;
     summary.setAttribute('role', 'button');
-    summary.appendChild(el('div', 'agent-name', a.user));
+    const nameEl = el('div', 'agent-name');
+    nameEl.appendChild(document.createTextNode(a.user));
+    if (a.faction) {
+      nameEl.appendChild(el('span', 'agent-faction ' + (a.faction === 'ENLIGHTENED' ? 'enl' : 'res'),
+        a.faction === 'ENLIGHTENED' ? 'Enlightened' : 'Resistance'));
+    }
+    summary.appendChild(nameEl);
     summary.appendChild(el('div', 'agent-meta',
       a.plugins.length + ' plugin' + (a.plugins.length === 1 ? '' : 's') + ' · ' +
       a.keyCount + ' key' + (a.keyCount === 1 ? '' : 's') + ' · ' +
@@ -202,6 +288,8 @@
     if (!data) return;
     const filter = $('filter').value.trim().toLowerCase();
     renderStats(data.agents);
+    renderRegistered(data.agents);
+    renderFactions(data.agents);
     const box = $('agents');
     box.textContent = '';
     let shown = 0;

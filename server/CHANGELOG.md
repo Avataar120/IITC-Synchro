@@ -1,5 +1,8 @@
 # Sync server changelog
 
+## 1.9.0 (2026-10-08)
+- NEW: The admin page now shows each agent's faction, a Resistance/Enlightened breakdown, and a day-by-day chart of new registrations.
+
 ## 1.8.0 (2026-10-08)
 - NEW: Each agent's synced data can now grow up to 4 MB, up from 2 MB.
 
