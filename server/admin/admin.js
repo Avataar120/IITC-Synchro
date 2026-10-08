@@ -10,13 +10,13 @@
   let resetUser = null;
 
   function getToken() {
-    try { return sessionStorage.getItem(TOKEN_KEY); } catch (e) { return token; }
+    try { return localStorage.getItem(TOKEN_KEY); } catch (e) { return token; }
   }
 
   function setToken(t) {
     token = t;
     try {
-      if (t) sessionStorage.setItem(TOKEN_KEY, t); else sessionStorage.removeItem(TOKEN_KEY);
+      if (t) localStorage.setItem(TOKEN_KEY, t); else localStorage.removeItem(TOKEN_KEY);
     } catch (e) { /* stockage indisponible : jeton gardé en mémoire */ }
   }
 
@@ -205,7 +205,8 @@
     const box = $('agents');
     box.textContent = '';
     let shown = 0;
-    data.agents.forEach(function (a) {
+    const agents = data.agents.slice().sort(function (a, b) { return b.lastChange - a.lastChange; });
+    agents.forEach(function (a) {
       const card = renderAgent(a, data.limits, filter);
       if (card) { box.appendChild(card); shown++; }
     });
