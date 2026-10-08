@@ -173,6 +173,14 @@ function wrapper(plugin_info) {
     return nickname ? nickname.toLowerCase() : null;
   };
 
+  // Resistance or Enlightened, as IITC exposes it. Sent to the server in
+  // clear on every sync -- the one field that isn't end-to-end encrypted --
+  // so the admin page can show it; everything else stays unreadable to the server.
+  self.getFaction = function () {
+    const team = window.PLAYER && window.PLAYER.team;
+    return (team === 'RESISTANCE' || team === 'ENLIGHTENED') ? team : null;
+  };
+
   self.getState = function () {
     try { return JSON.parse(localStorage.getItem(self.STATE_KEY) || '{}'); } catch (e) { return {}; }
   };
@@ -490,6 +498,8 @@ function wrapper(plugin_info) {
 
         const body = { v: self.PROTOCOL_VERSION, user: user, since: forceAll ? 0 : (state.rev || 0), entries: sentEntries };
         if (keys.wrappedKeyToSend) body.wrappedKey = keys.wrappedKeyToSend;
+        const faction = self.getFaction();
+        if (faction) body.faction = faction;
 
         return fetch(self.ENDPOINT + '/sync', {
           method: 'POST',
@@ -712,6 +722,8 @@ function wrapper(plugin_info) {
           keysToSend.forEach(function (k, i) { sentEntries[k] = { value: encryptedValues[i], ts: plainEntries[k].ts }; });
           const body = { v: self.PROTOCOL_VERSION, password: keys.authKey, user: user, since: 0, entries: sentEntries };
           if (keys.wrappedKeyToSend) body.wrappedKey = keys.wrappedKeyToSend;
+          const faction = self.getFaction();
+          if (faction) body.faction = faction;
           self.pendingBeacon = JSON.stringify(body);
         });
     }).catch(function () { /* kept as null, retried on the next tick */ });
