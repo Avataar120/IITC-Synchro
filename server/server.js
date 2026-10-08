@@ -17,8 +17,8 @@ const ADMIN_FILE = process.env.ADMIN_FILE || path.join(path.dirname(DATA_DIR), '
 const ADMIN_DIR = path.join(__dirname, 'admin');
 
 // Limites de taille
-const MAX_BODY = 2 * 1024 * 1024;          // corps d'une requête
-const MAX_STORE = 2 * 1024 * 1024;         // données d'un agent
+const MAX_BODY = 4 * 1024 * 1024;          // corps d'une requête
+const MAX_STORE = 4 * 1024 * 1024;         // données d'un agent
 const MAX_ENTRIES = 2000;                  // clés par agent
 const MAX_KEY_LENGTH = 256;
 const MAX_USERS = 200;
